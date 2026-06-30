@@ -10,7 +10,7 @@ router.use(requireAuth);
 const FIELDS = [
   'lr_no', 'lr_date', 'edd', 'booking_mode',
   'origin', 'destination',
-  'consignor_name_address', 'consignor_gstin',
+  'consignor_name_address', 'consignor_gstin', 'consignor_mobile', 'consignor_email',
   'consignee_name_address', 'consignee_gstin',
   'vehicle_no', 'driver_name', 'driver_mobile', 'vehicle_type',
   'eway_bill_no', 'eway_validity', 'invoice_no', 'invoice_date', 'invoice_value',
