@@ -105,6 +105,8 @@ router.get('/:id', (req, res) => {
   y += 26;
   doc.font('Helvetica').fontSize(6.5).fillColor('#5C6B7A').text('GSTIN: ' + (c.consignor_gstin || '-'), MARGIN, y, { width: halfWidth });
   doc.text('GSTIN: ' + (c.consignee_gstin || '-'), MARGIN + halfWidth + 12, y, { width: halfWidth });
+  y += 12;
+  doc.text('Mobile: ' + (c.consignor_mobile || '-') + '   Email: ' + (c.consignor_email || '-'), MARGIN, y, { width: halfWidth });
   y += 14;
 
   // ----- Vehicle & Shipment -----
