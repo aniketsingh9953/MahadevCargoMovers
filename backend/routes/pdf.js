@@ -191,10 +191,17 @@ router.get('/:id', (req, res) => {
   labelValue(doc, MARGIN + (lColW + 8) * 3, y, 'Risk Type', c.risk_type, lColW);
   y += 26;
 
-  doc.font('Helvetica').fontSize(6.5).fillColor('#5C6B7A').text('REMARKS', MARGIN, y);
+  const remarksColWidth = CONTENT_WIDTH / 2 - 6;
+  doc.font('Helvetica').fontSize(6.5).fillColor('#5C6B7A').text('REMARKS', MARGIN, y, { width: remarksColWidth });
+  doc.text('BANK DETAIL', MARGIN + remarksColWidth + 12, y, { width: remarksColWidth });
   y += 9;
-  doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#1A1A1A').text(c.remarks || '-', MARGIN, y, { width: CONTENT_WIDTH });
-  y += 20;
+  const remarksStartY = y;
+  doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#1A1A1A').text(c.remarks || '-', MARGIN, y, { width: remarksColWidth });
+  doc.font('Helvetica').fontSize(8).fillColor('#1A1A1A').text(
+    'MAHADEV CARGO MOVERS\nBank Name: ICICI Bank Ltd\nA/c No: 693705500442\nIFSC Code: ICIC0006937',
+    MARGIN + remarksColWidth + 12, y, { width: remarksColWidth }
+  );
+  y = Math.max(y, remarksStartY + doc.heightOfString(c.remarks || '-', { width: remarksColWidth })) + 20;
 
   // ----- Terms & Conditions -----
   if (y > 560) { doc.addPage(); y = MARGIN; }
