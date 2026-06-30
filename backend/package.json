@@ -4,8 +4,8 @@
   "description": "Mahadev Cargo Movers - LR Management System Backend",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
+    "start": "node db/init.js && node server.js",
+    "dev": "node db/init.js && node server.js",
     "init-db": "node db/init.js"
   },
   "dependencies": {
