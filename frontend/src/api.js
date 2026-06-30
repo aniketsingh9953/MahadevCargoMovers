@@ -30,7 +30,11 @@ const Api = {
 
     const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
-    if (res.status === 401) {
+    // Only treat a 401 as "your session expired" when we actually sent an existing
+    // token. A failed /auth/login attempt also returns 401 for wrong credentials,
+    // and that should just show an error — not force-reload the page (which was
+    // wiping the error message off-screen in under a second).
+    if (res.status === 401 && token) {
       this.clearToken();
       window.location.reload();
       throw new Error('Session expired. Please log in again.');
