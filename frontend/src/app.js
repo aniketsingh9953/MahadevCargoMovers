@@ -396,6 +396,8 @@ async function renderFormView(main) {
       destination: '',
       consignor_name_address: '',
       consignor_gstin: '',
+      consignor_mobile: '',
+      consignor_email: '',
       consignee_name_address: '',
       consignee_gstin: '',
       vehicle_no: '',
@@ -490,6 +492,14 @@ async function renderFormView(main) {
         <div class="field-group">
           <label>Consignee GSTIN</label>
           <input type="text" name="consignee_gstin" value="${escapeHtml(formData.consignee_gstin)}" />
+        </div>
+        <div class="field-group">
+          <label>Consignor Mobile</label>
+          <input type="tel" name="consignor_mobile" value="${escapeHtml(formData.consignor_mobile)}" placeholder="9876543210" />
+        </div>
+        <div class="field-group">
+          <label>Consignor Email</label>
+          <input type="email" name="consignor_email" value="${escapeHtml(formData.consignor_email)}" placeholder="consignor@example.com" />
         </div>
       </div>
 
@@ -688,8 +698,16 @@ function renderListView(main) {
   document.getElementById('search-input').addEventListener('input', (e) => {
     clearTimeout(debounceTimer);
     State.searchQuery = e.target.value;
+    const cursorPos = e.target.selectionStart;
     debounceTimer = setTimeout(async () => {
       await loadConsignments();
+      // The re-render above replaced the search input with a fresh DOM node,
+      // which stole focus. Restore focus + cursor position so typing isn't interrupted.
+      const freshInput = document.getElementById('search-input');
+      if (freshInput) {
+        freshInput.focus();
+        freshInput.setSelectionRange(cursorPos, cursorPos);
+      }
     }, 300);
   });
 
@@ -713,31 +731,75 @@ function renderSettingsView(main) {
       <form id="change-password-form">
         <div class="field-group">
           <label>Current Password</label>
-          <input type="password" name="currentPassword" required autocomplete="current-password" />
+          <div class="password-field">
+            <input type="password" name="currentPassword" id="pw-current" required autocomplete="current-password" />
+            <button type="button" class="icon-btn password-toggle" data-target="pw-current" title="Show/hide password">${Icons.eye}</button>
+          </div>
         </div>
         <div class="field-group">
           <label>New Password</label>
-          <input type="password" name="newPassword" required minlength="6" autocomplete="new-password" />
+          <div class="password-field">
+            <input type="password" name="newPassword" id="pw-new" required minlength="6" autocomplete="new-password" />
+            <button type="button" class="icon-btn password-toggle" data-target="pw-new" title="Show/hide password">${Icons.eye}</button>
+          </div>
           <div class="hint">At least 6 characters.</div>
+        </div>
+        <div class="field-group">
+          <label>Confirm New Password</label>
+          <div class="password-field">
+            <input type="password" name="confirmPassword" id="pw-confirm" required minlength="6" autocomplete="new-password" />
+            <button type="button" class="icon-btn password-toggle" data-target="pw-confirm" title="Show/hide password">${Icons.eye}</button>
+          </div>
+          <div class="hint" id="pw-match-hint"></div>
         </div>
         <button type="submit" class="btn btn-primary" id="change-pw-btn">Update Password</button>
       </form>
     </div>
   `;
 
+  // Eye toggle buttons — flip the matching input between password/text and swap the icon.
+  document.querySelectorAll('.password-toggle').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const input = document.getElementById(btn.dataset.target);
+      const showing = input.type === 'text';
+      input.type = showing ? 'password' : 'text';
+      btn.innerHTML = showing ? Icons.eye : Icons.eyeOff;
+    });
+  });
+
+  // Live feedback if new password and confirm don't match yet.
+  const newPwEl = document.getElementById('pw-new');
+  const confirmPwEl = document.getElementById('pw-confirm');
+  const matchHint = document.getElementById('pw-match-hint');
+  function checkMatch() {
+    if (!confirmPwEl.value) { matchHint.textContent = ''; return; }
+    matchHint.textContent = newPwEl.value === confirmPwEl.value ? '' : 'Passwords do not match.';
+    matchHint.style.color = 'var(--danger)';
+  }
+  newPwEl.addEventListener('input', checkMatch);
+  confirmPwEl.addEventListener('input', checkMatch);
+
   document.getElementById('change-password-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
     const currentPassword = fd.get('currentPassword');
     const newPassword = fd.get('newPassword');
+    const confirmPassword = fd.get('confirmPassword');
     const msgEl = document.getElementById('settings-msg');
     const btn = document.getElementById('change-pw-btn');
 
     msgEl.innerHTML = '';
+
+    if (newPassword !== confirmPassword) {
+      msgEl.innerHTML = `<div class="error-banner">New password and confirmation do not match.</div>`;
+      return;
+    }
+
     btn.disabled = true;
 
     try {
       const res = await Api.changePassword(currentPassword, newPassword);
+      if (res.token) Api.setToken(res.token);
       msgEl.innerHTML = `<div class="success-banner">${escapeHtml(res.message)}</div>`;
       e.target.reset();
     } catch (err) {
