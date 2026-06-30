@@ -8,7 +8,7 @@ const { requireAuth } = require('./auth');
 router.use(requireAuth);
 
 const PAGE_WIDTH = 595.28; // A4 in points
-const MARGIN = 36;
+const MARGIN = 28;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
 
 function fmtDate(d) {
@@ -29,15 +29,15 @@ function fmtDateTime(d) {
 
 function drawSectionHeader(doc, y, label) {
   doc
-    .rect(MARGIN, y, CONTENT_WIDTH, 16)
+    .rect(MARGIN, y, CONTENT_WIDTH, 13)
     .fillAndStroke('#0F1C2E', '#0F1C2E');
   doc
     .fillColor('#FFFFFF')
     .font('Helvetica-Bold')
-    .fontSize(8)
-    .text(label, MARGIN + 6, y + 4, { characterSpacing: 0.5 });
+    .fontSize(7.2)
+    .text(label, MARGIN + 6, y + 3, { characterSpacing: 0.4 });
   doc.fillColor('#1A1A1A');
-  return y + 16;
+  return y + 13;
 }
 
 function labelValue(doc, x, y, label, value, width) {
@@ -50,16 +50,16 @@ function labelValue(doc, x, y, label, value, width) {
 // the longest-wrapping value — same dynamic-grid behaviour as the goods table,
 // so long text always stays inside its box instead of overflowing.
 function drawGridRow(doc, y, cells, colWidths) {
-  const padX = 6;
-  const padTop = 5;
-  const labelH = 9;
+  const padX = 5;
+  const padTop = 3;
+  const labelH = 7.5;
   const rowTop = y;
 
-  doc.font('Helvetica-Bold').fontSize(8.5);
+  doc.font('Helvetica-Bold').fontSize(7.8);
   const heights = cells.map((cell, i) =>
     doc.heightOfString(cell.value || '-', { width: colWidths[i] - padX * 2 })
   );
-  const rowH = padTop + labelH + Math.max(...heights) + 6;
+  const rowH = padTop + labelH + Math.max(...heights) + 4;
 
   // Outer + vertical dividers
   let tx = MARGIN;
@@ -73,9 +73,9 @@ function drawGridRow(doc, y, cells, colWidths) {
   // Label + value text
   tx = MARGIN;
   cells.forEach((cell, i) => {
-    doc.font('Helvetica').fontSize(6.5).fillColor('#5C6B7A')
+    doc.font('Helvetica').fontSize(5.8).fillColor('#5C6B7A')
       .text(cell.label.toUpperCase(), tx + padX, rowTop + padTop, { width: colWidths[i] - padX * 2 });
-    doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#1A1A1A')
+    doc.font('Helvetica-Bold').fontSize(7.8).fillColor('#1A1A1A')
       .text(cell.value || '-', tx + padX, rowTop + padTop + labelH, { width: colWidths[i] - padX * 2 });
     tx += colWidths[i];
   });
@@ -97,25 +97,25 @@ router.get('/:id', (req, res) => {
   let y = MARGIN;
 
   // ----- Header / Company block -----
-  doc.font('Helvetica-Bold').fontSize(18).fillColor('#0F1C2E')
+  doc.font('Helvetica-Bold').fontSize(15).fillColor('#0F1C2E')
     .text('MAHADEV CARGO MOVERS', MARGIN, y);
-  y += 20;
-  doc.font('Helvetica').fontSize(8).fillColor('#5C6B7A')
+  y += 16;
+  doc.font('Helvetica').fontSize(7).fillColor('#5C6B7A')
     .text('Fleet Owner | Transport Contractor | Commission Agent', MARGIN, y);
-  y += 11;
+  y += 9;
   doc.text('Zamar Kotda Road, Near Kalika Resort, Umarda, Udaipur - 313003', MARGIN, y);
-  y += 10;
+  y += 8.5;
   doc.text('Mob: 8209490565 / 7015741767  |  Email: mahadevcargomovers@gmail.com', MARGIN, y);
-  y += 10;
+  y += 8.5;
   doc.text('GSTIN: 08CLXPS2117L1ZC   |   PAN: CLKPS2117L', MARGIN, y);
-  y += 14;
+  y += 12;
 
   // Title bar
-  doc.rect(MARGIN, y, CONTENT_WIDTH, 18).fillAndStroke('#E8A33D', '#E8A33D');
-  doc.fillColor('#0F1C2E').font('Helvetica-Bold').fontSize(11)
-    .text('CONSIGNMENT NOTE', MARGIN, y + 4, { width: CONTENT_WIDTH, align: 'center' });
+  doc.rect(MARGIN, y, CONTENT_WIDTH, 15).fillAndStroke('#E8A33D', '#E8A33D');
+  doc.fillColor('#0F1C2E').font('Helvetica-Bold').fontSize(9.5)
+    .text('CONSIGNMENT NOTE', MARGIN, y + 3.5, { width: CONTENT_WIDTH, align: 'center' });
   doc.fillColor('#1A1A1A');
-  y += 26;
+  y += 19;
 
   // ----- Origin / Destination -----
   const halfWidth = CONTENT_WIDTH / 2;
@@ -132,7 +132,7 @@ router.get('/:id', (req, res) => {
     { label: 'EDD', value: fmtDate(c.edd) },
     { label: 'Booking Mode', value: c.booking_mode },
   ], [colW, colW, colW, colW]);
-  y += 10;
+  y += 4;
 
   // ----- Consignor / Consignee -----
   y = drawSectionHeader(doc, y, 'CONSIGNOR & CONSIGNEE');
@@ -142,7 +142,7 @@ router.get('/:id', (req, res) => {
     { label: 'Consignor Name & Address', value: consignorValue },
     { label: 'Consignee Name & Address', value: consigneeValue },
   ], [halfWidth, halfWidth]);
-  y += 10;
+  y += 4;
 
   // ----- Vehicle & Shipment -----
   y = drawSectionHeader(doc, y, 'VEHICLE & SHIPMENT DETAILS');
@@ -153,7 +153,7 @@ router.get('/:id', (req, res) => {
     { label: 'Driver Mobile', value: c.driver_mobile },
     { label: 'Vehicle Type', value: c.vehicle_type },
   ], [vColW, vColW, vColW, vColW]);
-  y += 10;
+  y += 4;
 
   // ----- Invoice & E-way Bill -----
   y = drawSectionHeader(doc, y, 'INVOICE & E-WAY BILL DETAILS');
@@ -168,31 +168,30 @@ router.get('/:id', (req, res) => {
     { label: 'Invoice Date', value: fmtDate(c.invoice_date) },
     { label: 'Invoice Value (Rs.)', value: c.invoice_value },
   ], [iColW2, iColW2]);
-  y += 10;
+  y += 4;
 
   // ----- Insurance -----
   y = drawGridRow(doc, y, [
     { label: 'Insurance Detail / Special Instructions', value: c.insurance_detail },
   ], [CONTENT_WIDTH]);
-  y += 10;
+  y += 4;
 
   // ----- Goods Description Table -----
   y = drawSectionHeader(doc, y, 'GOODS DESCRIPTION (SAID TO CONTAIN)');
-  y += 6;
 
   const tableHeaders = ['Pkgs (Nos.)', 'Packing Type', 'Description of Goods', 'Actual Wt (Kg)', 'Charged Wt (Kg)', 'Customer Ref. No.'];
   const tableColWidths = [55, 65, 150, 65, 70, CONTENT_WIDTH - 405];
   const tableTop = y;
-  const headerRowH = 16;
+  const headerRowH = 13;
   const tablePadX = 4;
-  const cellVPad = 6;
+  const cellVPad = 4;
 
   // Header row background + text
   doc.rect(MARGIN, y, CONTENT_WIDTH, headerRowH).fillAndStroke('#F0EDE6', '#5C6B7A');
   let tx = MARGIN;
-  doc.font('Helvetica-Bold').fontSize(7).fillColor('#5C6B7A');
+  doc.font('Helvetica-Bold').fontSize(6.3).fillColor('#5C6B7A');
   tableHeaders.forEach((h, i) => {
-    doc.text(h, tx + tablePadX, y + 4, { width: tableColWidths[i] - tablePadX * 2 });
+    doc.text(h, tx + tablePadX, y + 3, { width: tableColWidths[i] - tablePadX * 2 });
     tx += tableColWidths[i];
   });
   y += headerRowH;
@@ -200,7 +199,7 @@ router.get('/:id', (req, res) => {
   // Data row — height is dynamic: grows to fit whichever cell wraps the most
   // (e.g. a long goods description), so text never spills outside its box.
   const rowValues = [c.pkgs_nos, c.packing_type, c.goods_description, c.actual_wt, c.charged_wt, c.customer_ref_no];
-  doc.font('Helvetica').fontSize(8.5);
+  doc.font('Helvetica').fontSize(7.5);
   const cellHeights = rowValues.map((v, i) =>
     doc.heightOfString(v || '-', { width: tableColWidths[i] - tablePadX * 2 })
   );
@@ -208,7 +207,7 @@ router.get('/:id', (req, res) => {
 
   doc.rect(MARGIN, y, CONTENT_WIDTH, dataRowH).stroke('#5C6B7A');
   tx = MARGIN;
-  doc.font('Helvetica').fontSize(8.5).fillColor('#1A1A1A');
+  doc.font('Helvetica').fontSize(7.5).fillColor('#1A1A1A');
   rowValues.forEach((v, i) => {
     doc.text(v || '-', tx + tablePadX, y + cellVPad, { width: tableColWidths[i] - tablePadX * 2 });
     tx += tableColWidths[i];
@@ -225,7 +224,7 @@ router.get('/:id', (req, res) => {
   // Outer border (redraw crisply over the two rects)
   doc.rect(MARGIN, tableTop, CONTENT_WIDTH, headerRowH + dataRowH).stroke('#5C6B7A');
 
-  y += 14;
+  y += 4;
 
   // ----- Loading details / Payment / Risk -----
   y = drawSectionHeader(doc, y, 'LOADING DETAILS, PAYMENT & REMARKS');
@@ -246,7 +245,12 @@ router.get('/:id', (req, res) => {
   y += 16;
 
   // ----- Terms & Conditions -----
-  if (y > 560) { doc.addPage(); y = MARGIN; }
+  // Reserve enough room for the terms block + declaration + signature area
+  // before deciding whether a page break is actually needed (the old fixed
+  // threshold here was left over from a taller layout and broke the page
+  // prematurely even when there was plenty of space left).
+  const PAGE_BOTTOM = doc.page.height - MARGIN;
+  if (y > PAGE_BOTTOM - 230) { doc.addPage(); y = MARGIN; }
   y = drawSectionHeader(doc, y, 'TERMS & CONDITIONS - AT OWNER\'S RISK');
   y += 8;
   const terms = [
@@ -258,11 +262,25 @@ router.get('/:id', (req, res) => {
     "Demurrage @ Rs.4/quintal after 7 days from arrival. Re-booking charges extra. Perishable goods disposed after 48 hrs if undelivered.",
     "Jurisdiction: UDAIPUR ONLY. All disputes, claims & matters subject to Udaipur courts only. This CN is legal & valid as per IT Act 2000.",
   ];
-  doc.font('Helvetica').fontSize(6.8).fillColor('#1A1A1A');
-  terms.forEach((t, i) => {
-    doc.text(`${i + 1}. ${t}`, MARGIN, y, { width: CONTENT_WIDTH });
-    y += doc.heightOfString(`${i + 1}. ${t}`, { width: CONTENT_WIDTH }) + 2;
+  doc.font('Helvetica').fontSize(6.5).fillColor('#1A1A1A');
+  const termsColWidth = CONTENT_WIDTH / 2 - 8;
+  const half = Math.ceil(terms.length / 2);
+  const leftTerms = terms.slice(0, half);
+  const rightTerms = terms.slice(half);
+  const termsTop = y;
+  let yLeft = termsTop;
+  leftTerms.forEach((t, i) => {
+    const line = `${i + 1}. ${t}`;
+    doc.text(line, MARGIN, yLeft, { width: termsColWidth });
+    yLeft += doc.heightOfString(line, { width: termsColWidth }) + 2;
   });
+  let yRight = termsTop;
+  rightTerms.forEach((t, i) => {
+    const line = `${half + i + 1}. ${t}`;
+    doc.text(line, MARGIN + termsColWidth + 16, yRight, { width: termsColWidth });
+    yRight += doc.heightOfString(line, { width: termsColWidth }) + 2;
+  });
+  y = Math.max(yLeft, yRight);
 
   y += 6;
   doc.font('Helvetica-Oblique').fontSize(6.8).fillColor('#5C6B7A').text(
@@ -272,8 +290,8 @@ router.get('/:id', (req, res) => {
   y += 24;
 
   // ----- Signature blocks -----
-  y += 30; // blank space reserved for actual wet signatures
-  if (y > 720) { doc.addPage(); y = MARGIN; }
+  y += 18; // blank space reserved for actual wet signatures
+  if (y > PAGE_BOTTOM - 70) { doc.addPage(); y = MARGIN; }
   const sigColWidth = CONTENT_WIDTH / 2 - 6;
   doc.moveTo(MARGIN, y).lineTo(MARGIN + sigColWidth, y).strokeColor('#1A1A1A').lineWidth(0.5).stroke();
   doc.moveTo(MARGIN + sigColWidth + 12, y).lineTo(MARGIN + CONTENT_WIDTH, y).stroke();
