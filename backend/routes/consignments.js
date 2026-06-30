@@ -7,6 +7,19 @@ const { requireAuth } = require('./auth');
 // All routes here require a valid login.
 router.use(requireAuth);
 
+// Turns a raw SQLite error into a readable, specific message instead of a
+// generic "could not save" — e.g. tells the user which column/constraint failed.
+function dbErrorDetail(err) {
+  const msg = err && err.message ? err.message : '';
+  const m = msg.match(/(?:NOT NULL constraint failed|UNIQUE constraint failed|CHECK constraint failed): consignment_notes\.(\w+)/);
+  if (m) {
+    const field = m[1].replace(/_/g, ' ');
+    if (msg.includes('UNIQUE')) return `"${field}" must be unique — this value is already in use.`;
+    return `"${field}" is required but was left empty.`;
+  }
+  return msg || 'An unexpected database error occurred.';
+}
+
 const FIELDS = [
   'lr_no', 'lr_date', 'edd', 'booking_mode',
   'origin', 'destination',
@@ -70,6 +83,12 @@ router.post('/', (req, res) => {
   if (!body.lr_no || !body.lr_date) {
     return res.status(400).json({ error: 'LR No. and LR Date are required.' });
   }
+  if (!body.origin || !body.destination) {
+    return res.status(400).json({ error: 'Origin and Destination are required.' });
+  }
+  if (!body.consignor_name_address || !body.consignee_name_address) {
+    return res.status(400).json({ error: 'Consignor and Consignee name & address are required.' });
+  }
 
   const existing = db.prepare('SELECT id FROM consignment_notes WHERE lr_no = ?').get(body.lr_no);
   if (existing) {
@@ -89,7 +108,7 @@ router.post('/', (req, res) => {
     res.status(201).json(created);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Could not save the consignment note.' });
+    res.status(500).json({ error: `Could not save the consignment note: ${dbErrorDetail(err)}` });
   }
 });
 
@@ -99,15 +118,35 @@ router.put('/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM consignment_notes WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Consignment note not found.' });
 
+  if (!body.lr_no || !body.lr_date) {
+    return res.status(400).json({ error: 'LR No. and LR Date are required.' });
+  }
+  if (!body.origin || !body.destination) {
+    return res.status(400).json({ error: 'Origin and Destination are required.' });
+  }
+  if (!body.consignor_name_address || !body.consignee_name_address) {
+    return res.status(400).json({ error: 'Consignor and Consignee name & address are required.' });
+  }
+
+  const dupe = db.prepare('SELECT id FROM consignment_notes WHERE lr_no = ? AND id != ?').get(body.lr_no, req.params.id);
+  if (dupe) {
+    return res.status(409).json({ error: `LR No. ${body.lr_no} already exists.` });
+  }
+
   const setClause = FIELDS.map((f) => `${f} = ?`).join(', ');
   const values = FIELDS.map((f) => body[f] ?? null);
 
-  db.prepare(
-    `UPDATE consignment_notes SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
-  ).run(...values, req.params.id);
+  try {
+    db.prepare(
+      `UPDATE consignment_notes SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+    ).run(...values, req.params.id);
 
-  const updated = db.prepare('SELECT * FROM consignment_notes WHERE id = ?').get(req.params.id);
-  res.json(updated);
+    const updated = db.prepare('SELECT * FROM consignment_notes WHERE id = ?').get(req.params.id);
+    res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: `Could not update the consignment note: ${dbErrorDetail(err)}` });
+  }
 });
 
 // DELETE /api/consignments/:id
