@@ -9,6 +9,7 @@ const State = {
   consignments: [],
   searchQuery: '',
   toast: null,
+  dashboardFilters: { period: 'all', consignor: '', vehicle: '', consignee: '' },
 };
 
 const root = document.getElementById('app');
@@ -200,11 +201,51 @@ async function loadConsignments() {
 // ===================== DASHBOARD VIEW =====================
 
 function renderDashboard(main) {
-  const total = State.consignments.length;
+  const f = State.dashboardFilters;
+
+  // ----- Period filter (Weekly / Monthly / Yearly / All) -----
+  const now = new Date();
+  function inPeriod(c) {
+    if (f.period === 'all' || !c.lr_date) return true;
+    const d = new Date(c.lr_date);
+    if (isNaN(d)) return true;
+    if (f.period === 'week') {
+      const diffDays = (now - d) / (1000 * 60 * 60 * 24);
+      return diffDays >= 0 && diffDays < 7;
+    }
+    if (f.period === 'month') {
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    }
+    if (f.period === 'year') {
+      return d.getFullYear() === now.getFullYear();
+    }
+    return true;
+  }
+
+  // ----- Dropdown filter options, built from all data (not yet filtered) -----
+  const consignorOptions = [...new Set(State.consignments.map((c) => c.consignor_name_address).filter(Boolean))].sort();
+  const consigneeOptions = [...new Set(State.consignments.map((c) => c.consignee_name_address).filter(Boolean))].sort();
+  const vehicleOptions = [...new Set(State.consignments.map((c) => c.vehicle_no).filter(Boolean))].sort();
+
+  const filtered = State.consignments.filter((c) =>
+    inPeriod(c) &&
+    (!f.consignor || c.consignor_name_address === f.consignor) &&
+    (!f.consignee || c.consignee_name_address === f.consignee) &&
+    (!f.vehicle || c.vehicle_no === f.vehicle)
+  );
+
+  const total = filtered.length;
   const today = new Date().toISOString().slice(0, 10);
-  const todayCount = State.consignments.filter((c) => c.lr_date === today).length;
-  const totalWeight = State.consignments.reduce((sum, c) => sum + (parseFloat(c.charged_wt) || 0), 0);
-  const recent = State.consignments.slice(0, 6);
+  const todayCount = filtered.filter((c) => c.lr_date === today).length;
+  const totalWeight = filtered.reduce((sum, c) => sum + (parseFloat(c.charged_wt) || 0), 0);
+  const recent = filtered.slice(0, 8);
+
+  const periodTabs = [
+    { key: 'all', label: 'All Time' },
+    { key: 'week', label: 'Weekly' },
+    { key: 'month', label: 'Monthly' },
+    { key: 'year', label: 'Yearly' },
+  ];
 
   main.innerHTML = `
     <div class="page-header">
@@ -213,6 +254,28 @@ function renderDashboard(main) {
         <p>Overview of your consignment notes</p>
       </div>
       <button class="btn btn-accent" id="dash-new-btn">${Icons.plus} New Consignment Note</button>
+    </div>
+
+    <div class="dash-tabs" role="tablist" style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
+      ${periodTabs.map((t) => `
+        <button type="button" class="btn ${f.period === t.key ? 'btn-accent' : 'btn-ghost'} dash-tab-btn" data-period="${t.key}" style="padding:7px 16px; font-size:0.82rem;">${t.label}</button>
+      `).join('')}
+    </div>
+
+    <div class="dash-filters" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px;">
+      <select id="filter-consignor" style="max-width:220px;">
+        <option value="">All Consignors</option>
+        ${consignorOptions.map((v) => `<option value="${escapeHtml(v)}" ${f.consignor === v ? 'selected' : ''}>${escapeHtml(truncate(v, 30))}</option>`).join('')}
+      </select>
+      <select id="filter-consignee" style="max-width:220px;">
+        <option value="">All Consignees</option>
+        ${consigneeOptions.map((v) => `<option value="${escapeHtml(v)}" ${f.consignee === v ? 'selected' : ''}>${escapeHtml(truncate(v, 30))}</option>`).join('')}
+      </select>
+      <select id="filter-vehicle" style="max-width:180px;">
+        <option value="">All Vehicles</option>
+        ${vehicleOptions.map((v) => `<option value="${escapeHtml(v)}" ${f.vehicle === v ? 'selected' : ''}>${escapeHtml(v)}</option>`).join('')}
+      </select>
+      ${(f.consignor || f.consignee || f.vehicle) ? `<button type="button" class="btn btn-ghost" id="filter-clear" style="padding:7px 14px; font-size:0.82rem;">Clear filters</button>` : ''}
     </div>
 
     <div class="stats-row">
@@ -248,6 +311,34 @@ function renderDashboard(main) {
     State.view = 'list';
     renderApp();
   });
+
+  document.querySelectorAll('.dash-tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      State.dashboardFilters.period = btn.dataset.period;
+      renderMainContent();
+    });
+  });
+  document.getElementById('filter-consignor').addEventListener('change', (e) => {
+    State.dashboardFilters.consignor = e.target.value;
+    renderMainContent();
+  });
+  document.getElementById('filter-consignee').addEventListener('change', (e) => {
+    State.dashboardFilters.consignee = e.target.value;
+    renderMainContent();
+  });
+  document.getElementById('filter-vehicle').addEventListener('change', (e) => {
+    State.dashboardFilters.vehicle = e.target.value;
+    renderMainContent();
+  });
+  const clearBtn = document.getElementById('filter-clear');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      State.dashboardFilters.consignor = '';
+      State.dashboardFilters.consignee = '';
+      State.dashboardFilters.vehicle = '';
+      renderMainContent();
+    });
+  }
 
   attachTableActions(main);
 }
@@ -430,7 +521,7 @@ async function renderFormView(main) {
         <h1>${isEdit ? 'Edit Consignment Note' : 'New Consignment Note'}</h1>
         <p>Fields mirror your printed LR format — fill in and save.</p>
       </div>
-      <span class="risk-badge-preview">${escapeHtml(formData.risk_type || "Owner's Risk")}</span>
+      <span class="risk-badge-preview" id="risk-badge-preview">${escapeHtml(formData.risk_type || "Owner's Risk")}</span>
     </div>
 
     <form id="lr-form" class="lr-form">
@@ -630,6 +721,10 @@ async function renderFormView(main) {
   });
 
   document.getElementById('lr-form').addEventListener('submit', handleFormSubmit);
+
+  document.getElementById('risk-type-select').addEventListener('change', (e) => {
+    document.getElementById('risk-badge-preview').textContent = e.target.value;
+  });
 }
 
 async function handleFormSubmit(e) {
@@ -733,14 +828,14 @@ function renderSettingsView(main) {
           <label>Current Password</label>
           <div class="password-field">
             <input type="password" name="currentPassword" id="pw-current" required autocomplete="current-password" />
-            <button type="button" class="icon-btn password-toggle" data-target="pw-current" title="Show/hide password">${Icons.eye}</button>
+            <button type="button" class="icon-btn password-toggle" data-target="pw-current" title="Show/hide password">${Icons.eye || 'Show'}</button>
           </div>
         </div>
         <div class="field-group">
           <label>New Password</label>
           <div class="password-field">
             <input type="password" name="newPassword" id="pw-new" required minlength="6" autocomplete="new-password" />
-            <button type="button" class="icon-btn password-toggle" data-target="pw-new" title="Show/hide password">${Icons.eye}</button>
+            <button type="button" class="icon-btn password-toggle" data-target="pw-new" title="Show/hide password">${Icons.eye || 'Show'}</button>
           </div>
           <div class="hint">At least 6 characters.</div>
         </div>
@@ -748,7 +843,7 @@ function renderSettingsView(main) {
           <label>Confirm New Password</label>
           <div class="password-field">
             <input type="password" name="confirmPassword" id="pw-confirm" required minlength="6" autocomplete="new-password" />
-            <button type="button" class="icon-btn password-toggle" data-target="pw-confirm" title="Show/hide password">${Icons.eye}</button>
+            <button type="button" class="icon-btn password-toggle" data-target="pw-confirm" title="Show/hide password">${Icons.eye || 'Show'}</button>
           </div>
           <div class="hint" id="pw-match-hint"></div>
         </div>
@@ -763,7 +858,7 @@ function renderSettingsView(main) {
       const input = document.getElementById(btn.dataset.target);
       const showing = input.type === 'text';
       input.type = showing ? 'password' : 'text';
-      btn.innerHTML = showing ? Icons.eye : Icons.eyeOff;
+      btn.innerHTML = (showing ? Icons.eye : Icons.eyeOff) || (showing ? 'Show' : 'Hide');
     });
   });
 
