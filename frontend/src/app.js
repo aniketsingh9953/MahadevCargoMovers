@@ -10,6 +10,7 @@ const State = {
   searchQuery: '',
   toast: null,
   dashboardFilters: { period: 'all', consignor: '', vehicle: '', consignee: '' },
+  selectedIds: new Set(),
 };
 
 const root = document.getElementById('app');
@@ -343,12 +344,15 @@ function renderDashboard(main) {
   attachTableActions(main);
 }
 
-function renderTable(rows) {
+function renderTable(rows, opts = {}) {
+  const selectable = !!opts.selectable;
+  const allSelected = selectable && rows.length > 0 && rows.every((c) => State.selectedIds.has(String(c.id)));
   return `
     <div class="table-wrap">
       <table class="lr-table">
         <thead>
           <tr>
+            ${selectable ? `<th style="width:32px;"><input type="checkbox" id="select-all-checkbox" ${allSelected ? 'checked' : ''} /></th>` : ''}
             <th>LR No.</th>
             <th>Date</th>
             <th>Route</th>
@@ -362,6 +366,7 @@ function renderTable(rows) {
         <tbody>
           ${rows.map((c) => `
             <tr>
+              ${selectable ? `<td><input type="checkbox" class="row-checkbox" data-id="${c.id}" ${State.selectedIds.has(String(c.id)) ? 'checked' : ''} /></td>` : ''}
               <td><span class="lr-no-badge">${escapeHtml(c.lr_no)}</span></td>
               <td>${escapeHtml(c.lr_date)}</td>
               <td>${escapeHtml(c.origin)} → ${escapeHtml(c.destination)}</td>
@@ -421,6 +426,103 @@ function attachTableActions(main) {
     btn.addEventListener('click', () => {
       confirmDelete(btn.dataset.id, btn.dataset.lr);
     });
+  });
+
+  // ----- Bulk selection (checkboxes) -----
+  const selectAllBox = main.querySelector('#select-all-checkbox');
+  if (selectAllBox) {
+    selectAllBox.addEventListener('change', (e) => {
+      main.querySelectorAll('.row-checkbox').forEach((cb) => {
+        if (e.target.checked) State.selectedIds.add(cb.dataset.id);
+        else State.selectedIds.delete(cb.dataset.id);
+      });
+      renderMainContent();
+    });
+  }
+  main.querySelectorAll('.row-checkbox').forEach((cb) => {
+    cb.addEventListener('change', (e) => {
+      if (e.target.checked) State.selectedIds.add(cb.dataset.id);
+      else State.selectedIds.delete(cb.dataset.id);
+      renderMainContent();
+    });
+  });
+
+  const bulkDownloadBtn = main.querySelector('#bulk-download-btn');
+  if (bulkDownloadBtn) {
+    bulkDownloadBtn.addEventListener('click', () => bulkDownloadSelected(main));
+  }
+  const bulkDeleteBtn = main.querySelector('#bulk-delete-btn');
+  if (bulkDeleteBtn) {
+    bulkDeleteBtn.addEventListener('click', () => confirmBulkDelete());
+  }
+  const bulkClearBtn = main.querySelector('#bulk-clear-btn');
+  if (bulkClearBtn) {
+    bulkClearBtn.addEventListener('click', () => {
+      State.selectedIds.clear();
+      renderMainContent();
+    });
+  }
+}
+
+// Downloads selected records as individual PDFs, one after another with a
+// short stagger so the browser doesn't treat the burst as spam and block it.
+async function bulkDownloadSelected(main) {
+  const ids = [...State.selectedIds];
+  if (ids.length === 0) return;
+  const btn = main.querySelector('#bulk-download-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> Downloading 0/${ids.length}...`; }
+
+  let done = 0;
+  for (const id of ids) {
+    const record = State.consignments.find((c) => String(c.id) === id);
+    try {
+      await Api.downloadPdf(id, record ? record.lr_no : id);
+    } catch (err) {
+      console.error('Bulk download failed for', id, err);
+    }
+    done++;
+    if (btn) btn.innerHTML = `<span class="spinner"></span> Downloading ${done}/${ids.length}...`;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  showToast(`Downloaded ${done} PDF${done === 1 ? '' : 's'}.`);
+  renderMainContent();
+}
+
+function confirmBulkDelete() {
+  const count = State.selectedIds.size;
+  if (count === 0) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <h3>Delete ${count} consignment note${count === 1 ? '' : 's'}?</h3>
+      <p>This will permanently delete ${count === 1 ? 'this record' : 'these records'}. This cannot be undone.</p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="bulk-delete-cancel">Cancel</button>
+        <button class="btn btn-danger" id="bulk-delete-confirm">Delete ${count === 1 ? 'It' : 'All'}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#bulk-delete-cancel').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#bulk-delete-confirm').addEventListener('click', async () => {
+    const confirmBtn = overlay.querySelector('#bulk-delete-confirm');
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = `<span class="spinner"></span>`;
+    const ids = [...State.selectedIds];
+    let deleted = 0;
+    for (const id of ids) {
+      try {
+        await Api.deleteConsignment(id);
+        deleted++;
+      } catch (err) {
+        console.error('Bulk delete failed for', id, err);
+      }
+    }
+    State.selectedIds.clear();
+    overlay.remove();
+    showToast(`Deleted ${deleted} record${deleted === 1 ? '' : 's'}.`);
+    await loadConsignments();
   });
 }
 
@@ -766,6 +868,7 @@ async function handleFormSubmit(e) {
 // ===================== LIST VIEW =====================
 
 function renderListView(main) {
+  const selectedCount = State.selectedIds.size;
   main.innerHTML = `
     <div class="page-header">
       <div>
@@ -778,8 +881,16 @@ function renderListView(main) {
       <input type="text" id="search-input" placeholder="Search by LR no., vehicle, consignor, consignee, route..." value="${escapeHtml(State.searchQuery)}" />
       ${Icons.search}
     </div>
+    ${selectedCount > 0 ? `
+      <div class="bulk-action-bar" style="display:flex; align-items:center; gap:10px; background:var(--paper-dark); border:1px solid var(--border); border-radius:var(--radius); padding:10px 14px; margin-bottom:12px;">
+        <strong style="font-size:0.85rem; color:var(--navy);">${selectedCount} selected</strong>
+        <button type="button" class="btn btn-ghost" id="bulk-download-btn" style="padding:6px 12px; font-size:0.8rem;">${Icons.download} Download Selected</button>
+        <button type="button" class="btn btn-danger" id="bulk-delete-btn" style="padding:6px 12px; font-size:0.8rem;">${Icons.trash} Delete Selected</button>
+        <button type="button" class="btn btn-ghost" id="bulk-clear-btn" style="padding:6px 12px; font-size:0.8rem; margin-left:auto;">Clear selection</button>
+      </div>
+    ` : ''}
     <div class="panel">
-      ${State.consignments.length === 0 ? renderEmptyState() : renderTable(State.consignments)}
+      ${State.consignments.length === 0 ? renderEmptyState() : renderTable(State.consignments, { selectable: true })}
     </div>
   `;
 
