@@ -23,17 +23,15 @@ if (!process.env.JWT_SECRET) {
 }
 
 app.use(cors({
-<<<<<<< HEAD
   origin: process.env.CORS_ORIGIN || '*',
 }));
 app.use(cookieParser());
 app.use(express.json({ limit: '2mb' }));
-=======
+
      origin: process.env.CORS_ORIGIN || '*',
    }));
    app.use(cookieParser());
    app.use(express.json({ limit: '2mb' }));
->>>>>>> 0ec00a2bee8e0cd5d50a66cb6dcdf034160b77b0
 
 // Basic rate limiting on login to slow down brute-force attempts.
 const loginLimiter = rateLimit({
