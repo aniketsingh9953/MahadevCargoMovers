@@ -59,8 +59,12 @@ async function init() {
     State.user = { username: data.username };
     State.view = 'dashboard';
     renderApp();
-    loadConsignments();
-    startSessionHeartbeat();
+    
+    // Stagger the initial data fetch to allow state updates to cleanly settle
+    setTimeout(() => {
+      loadConsignments();
+      startSessionHeartbeat();
+    }, 50);
   } catch (err) {
     renderLogin();
   }
@@ -135,7 +139,12 @@ function renderLogin() {
       State.user = { username: data.username };
       State.view = 'dashboard';
       renderApp();
-      loadConsignments();
+      
+      // Deliberately delay payload execution so the browser can securely 
+      // process and save the incoming authentication headers/cookies first.
+      setTimeout(() => {
+        loadConsignments();
+      }, 100);
     } catch (err) {
       errorEl.innerHTML = `<div class="error-banner">${escapeHtml(err.message)}</div>`;
       btn.disabled = false;
@@ -227,7 +236,10 @@ async function loadConsignments() {
   try {
     State.consignments = await Api.listConsignments(State.searchQuery);
   } catch (err) {
-    showToast(err.message, 'error');
+    // Only display an implicit error toast if there's a valid global active session.
+    if (State.user) {
+      showToast(err.message, 'error');
+    }
   }
   if (State.view === 'dashboard' || State.view === 'list') renderMainContent();
 }
@@ -1050,7 +1062,6 @@ function renderSettingsView(main) {
 
 // If any API call returns 401 (session expired/invalidated server-side),
 // immediately show the login screen — don't leave the user on a broken page.
-// --- CORRECTED CODE ---
 window.addEventListener('mcm:session-expired', () => {
   // If the user isn't even logged in yet, ignore rogue trailing 401 data calls
   if (!State.user) return;
@@ -1065,4 +1076,5 @@ window.addEventListener('mcm:session-expired', () => {
     errorEl.innerHTML = `<div class="error-banner">Your session has ended. Please log in again.</div>`;
   }
 });
+
 init();
