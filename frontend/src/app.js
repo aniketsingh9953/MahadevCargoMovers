@@ -51,16 +51,42 @@ function escapeHtml(str) {
 
 // ===================== INIT =====================
 
-function init() {
-  const token = Api.getToken();
-  if (token) {
-    State.user = { username: Api.getUsername() };
+async function init() {
+  // Check whether the server considers the session cookie still valid.
+  // The cookie is httpOnly (invisible to JS) so we ask the server.
+  try {
+    const data = await Api.me();
+    State.user = { username: data.username };
     State.view = 'dashboard';
     renderApp();
     loadConsignments();
-  } else {
+    startSessionHeartbeat();
+  } catch (err) {
     renderLogin();
   }
+}
+
+// Poll the server every 60 seconds to check if the session is still valid.
+// This means: if the password is changed on another device, this tab shows
+// the login screen within ~60 seconds automatically, without the user having
+// to click anything. It also catches server-side idle-timeout expiry.
+function startSessionHeartbeat() {
+  if (window.__sessionHeartbeat) clearInterval(window.__sessionHeartbeat);
+  window.__sessionHeartbeat = setInterval(async () => {
+    try {
+      await Api.me(); // 401 = session gone server-side
+    } catch (err) {
+      clearInterval(window.__sessionHeartbeat);
+      State.user = null;
+      State.consignments = [];
+      renderLogin();
+      // Show a clear message so user knows why they were logged out
+      const errorEl = document.getElementById('login-error');
+      if (errorEl) {
+        errorEl.innerHTML = `<div class="error-banner">Your session has ended. Please log in again.</div>`;
+      }
+    }
+  }, 60 * 1000); // every 60 seconds
 }
 
 // ===================== LOGIN SCREEN =====================
@@ -106,8 +132,6 @@ function renderLogin() {
 
     try {
       const data = await Api.login(username, password);
-      Api.setToken(data.token);
-      Api.setUsername(data.username);
       State.user = { username: data.username };
       State.view = 'dashboard';
       renderApp();
@@ -120,8 +144,9 @@ function renderLogin() {
   });
 }
 
-function logout() {
-  Api.clearToken();
+async function logout() {
+  if (window.__sessionHeartbeat) clearInterval(window.__sessionHeartbeat);
+  await Api.logout();
   State.user = null;
   State.consignments = [];
   renderLogin();
@@ -1005,7 +1030,6 @@ function renderSettingsView(main) {
 
     try {
       const res = await Api.changePassword(currentPassword, newPassword);
-      if (res.token) Api.setToken(res.token);
       msgEl.innerHTML = `<div class="success-banner">${escapeHtml(res.message)}</div>`;
       e.target.reset();
     } catch (err) {
@@ -1015,5 +1039,18 @@ function renderSettingsView(main) {
     }
   });
 }
+
+// If any API call returns 401 (session expired/invalidated server-side),
+// immediately show the login screen — don't leave the user on a broken page.
+window.addEventListener('mcm:session-expired', () => {
+  if (window.__sessionHeartbeat) clearInterval(window.__sessionHeartbeat);
+  State.user = null;
+  State.consignments = [];
+  renderLogin();
+  const errorEl = document.getElementById('login-error');
+  if (errorEl) {
+    errorEl.innerHTML = `<div class="error-banner">Your session has ended. Please log in again.</div>`;
+  }
+});
 
 init();
