@@ -16,12 +16,9 @@
     "cookie-parser": "^1.4.6",
     "dotenv": "^16.4.5",
     "pdfkit": "^0.19.1",
-<<<<<<< HEAD
     "express-rate-limit": "^7.4.0",
     "@libsql/client": "^0.14.0"
-=======
     "express-rate-limit": "^7.4.0"
->>>>>>> 0ec00a2bee8e0cd5d50a66cb6dcdf034160b77b0
   },
   "engines": {
     "node": ">=18.0.0"
