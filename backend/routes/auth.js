@@ -63,7 +63,11 @@ router.post('/login', asyncHandler(async (req, res) => {
   const token = signToken(user);
   setSessionCookie(res, token);
   res.json({ username: user.username });
+<<<<<<< HEAD
 }));
+=======
+});
+>>>>>>> 0ec00a2bee8e0cd5d50a66cb6dcdf034160b77b0
 
 // GET /api/auth/me — used by the frontend on page load to check whether a
 // valid session cookie exists, since the token is no longer readable by JS.
@@ -78,7 +82,11 @@ router.post('/logout', (req, res) => {
 });
 
 // Middleware to protect routes
+<<<<<<< HEAD
 async function requireAuth(req, res, next) {
+=======
+function requireAuth(req, res, next) {
+>>>>>>> 0ec00a2bee8e0cd5d50a66cb6dcdf034160b77b0
   const token = req.cookies && req.cookies[COOKIE_NAME];
   if (!token) {
     return res.status(401).json({ error: 'No active session. Please log in.' });
@@ -104,7 +112,11 @@ async function requireAuth(req, res, next) {
     // Reject tokens issued before the most recent password change. This
     // forces every other device to re-authenticate immediately — the version
     // embedded in the token won't match the incremented DB value.
+<<<<<<< HEAD
     const user = await db.prepare('SELECT token_version FROM users WHERE id = ?').get(payload.userId);
+=======
+    const user = db.prepare('SELECT token_version FROM users WHERE id = ?').get(payload.userId);
+>>>>>>> 0ec00a2bee8e0cd5d50a66cb6dcdf034160b77b0
     if (!user || (payload.tokenVersion || 0) !== (user.token_version || 0)) {
       res.clearCookie(COOKIE_NAME, { path: '/' });
       return res.status(401).json({ error: 'Your session has ended because the password was changed. Please log in again.' });
@@ -137,7 +149,11 @@ router.post('/change-password', requireAuth, asyncHandler(async (req, res) => {
 
   const newHash = bcrypt.hashSync(newPassword, 10);
   const newTokenVersion = (user.token_version || 0) + 1;
+<<<<<<< HEAD
   await db.prepare('UPDATE users SET password_hash = ?, token_version = ? WHERE id = ?')
+=======
+  db.prepare('UPDATE users SET password_hash = ?, token_version = ? WHERE id = ?')
+>>>>>>> 0ec00a2bee8e0cd5d50a66cb6dcdf034160b77b0
     .run(newHash, newTokenVersion, user.id);
 
   // Issue a fresh session cookie for THIS device only, so it stays logged in;
@@ -148,6 +164,10 @@ router.post('/change-password', requireAuth, asyncHandler(async (req, res) => {
   setSessionCookie(res, token);
 
   res.json({ success: true, message: 'Password updated successfully. You have been logged out of all other devices.' });
+<<<<<<< HEAD
 }));
+=======
+});
+>>>>>>> 0ec00a2bee8e0cd5d50a66cb6dcdf034160b77b0
 
 module.exports = { router, requireAuth };

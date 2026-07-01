@@ -129,7 +129,11 @@ router.put('/:id', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Consignor and Consignee name & address are required.' });
   }
 
+<<<<<<< HEAD
   const dupe = await db.prepare('SELECT id FROM consignment_notes WHERE lr_no = ? AND id != ?').get(body.lr_no, req.params.id);
+=======
+  const dupe = db.prepare('SELECT id FROM consignment_notes WHERE lr_no = ? AND id != ?').get(body.lr_no, req.params.id);
+>>>>>>> 0ec00a2bee8e0cd5d50a66cb6dcdf034160b77b0
   if (dupe) {
     return res.status(409).json({ error: `LR No. ${body.lr_no} already exists.` });
   }
@@ -138,17 +142,29 @@ router.put('/:id', asyncHandler(async (req, res) => {
   const values = FIELDS.map((f) => body[f] ?? null);
 
   try {
+<<<<<<< HEAD
     await db.prepare(
       `UPDATE consignment_notes SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
     ).run(...values, req.params.id);
 
     const updated = await db.prepare('SELECT * FROM consignment_notes WHERE id = ?').get(req.params.id);
+=======
+    db.prepare(
+      `UPDATE consignment_notes SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+    ).run(...values, req.params.id);
+
+    const updated = db.prepare('SELECT * FROM consignment_notes WHERE id = ?').get(req.params.id);
+>>>>>>> 0ec00a2bee8e0cd5d50a66cb6dcdf034160b77b0
     res.json(updated);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: `Could not update the consignment note: ${dbErrorDetail(err)}` });
   }
+<<<<<<< HEAD
 }));
+=======
+});
+>>>>>>> 0ec00a2bee8e0cd5d50a66cb6dcdf034160b77b0
 
 // DELETE /api/consignments/:id
 router.delete('/:id', asyncHandler(async (req, res) => {
