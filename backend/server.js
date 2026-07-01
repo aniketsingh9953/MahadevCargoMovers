@@ -22,16 +22,12 @@ if (!process.env.JWT_SECRET) {
   process.exit(1);
 }
 
+// Global Middlewares
 app.use(cors({
   origin: process.env.CORS_ORIGIN || '*',
 }));
 app.use(cookieParser());
 app.use(express.json({ limit: '2mb' }));
-
-     origin: process.env.CORS_ORIGIN || '*',
-   }));
-   app.use(cookieParser());
-   app.use(express.json({ limit: '2mb' }));
 
 // Basic rate limiting on login to slow down brute-force attempts.
 const loginLimiter = rateLimit({
@@ -41,6 +37,7 @@ const loginLimiter = rateLimit({
 });
 app.use('/api/auth/login', loginLimiter);
 
+// API Routes
 app.use('/api/auth', authRouter);
 app.use('/api/consignments', consignmentsRouter);
 app.use('/api/pdf', pdfRouter);
@@ -57,6 +54,7 @@ app.get('*', (req, res, next) => {
   res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
+// Global Error Handler
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: 'Something went wrong on the server.' });
