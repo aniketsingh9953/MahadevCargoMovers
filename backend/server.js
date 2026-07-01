@@ -12,6 +12,10 @@ const pdfRouter = require('./routes/pdf');
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+// Tell Express to trust the proxy headers set by Render 
+// so express-rate-limit can accurately detect client IP addresses.
+app.set('trust proxy', 1);
+
 if (!process.env.JWT_SECRET) {
   console.error('FATAL: JWT_SECRET is not set in your .env file. Refusing to start.');
   process.exit(1);
