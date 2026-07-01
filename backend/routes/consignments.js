@@ -8,6 +8,7 @@ const asyncHandler = require('../utils/asyncHandler');
 // All routes here require a valid login.
 router.use(requireAuth);
 
+
 // Turns a raw SQLite error into a readable, specific message instead of a
 // generic "could not save" — e.g. tells the user which column/constraint failed.
 function dbErrorDetail(err) {
