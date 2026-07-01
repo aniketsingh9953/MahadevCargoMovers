@@ -1,54 +1,66 @@
 // db/connection.js
 //
-// Uses Node's BUILT-IN SQLite module (node:sqlite) instead of the
-// better-sqlite3 npm package. This needs Node.js 22+ and requires NO
-// compilation, no Visual Studio / build tools, no native addons at all —
-// it ships inside Node itself. This avoids the "Could not find any
-// Visual Studio installation" error that better-sqlite3 can cause on
-// Windows.
+// Uses Turso (libSQL) as the database — a hosted, network-accessible
+// SQLite-compatible database. This replaces the old local file-based
+// SQLite setup, which was wiped every time Render redeployed the service
+// (Render's free web services have an ephemeral filesystem).
 //
-// A thin wrapper below makes it behave like better-sqlite3's API
-// (.prepare().get/.all/.run, .exec, .pragma) so the rest of the app
-// doesn't need to change.
+// Turso uses the exact same SQL dialect as SQLite, so table definitions
+// and queries are unchanged. The only real difference is that every call
+// is now a network round-trip, so it's async — every db.prepare(...).get/
+// .all/.run() call must be awaited by the caller.
+//
+// Required env vars (see .env.example):
+//   TURSO_DATABASE_URL   e.g. libsql://your-db-name-yourusername.turso.io
+//   TURSO_AUTH_TOKEN     the auth token generated for that database
 
-const { DatabaseSync } = require('node:sqlite');
-const path = require('path');
+const { createClient } = require('@libsql/client');
 
-const dbPath = path.join(__dirname, 'mahadev.db');
-const rawDb = new DatabaseSync(dbPath);
+if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
+  console.error('FATAL: TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be set in your .env file.');
+  console.error('Create a free database at https://turso.tech and copy its URL + token.');
+  process.exit(1);
+}
 
+const client = createClient({
+  url: process.env.TURSO_DATABASE_URL,
+  authToken: process.env.TURSO_AUTH_TOKEN,
+});
+
+// Thin wrapper so the rest of the app keeps using the same
+// db.prepare(sql).get/.all/.run(...params) shape it used with node:sqlite —
+// just async now. All call sites must `await` these.
 class StatementWrapper {
-  constructor(stmt) {
-    this.stmt = stmt;
+  constructor(sql) {
+    this.sql = sql;
   }
-  get(...params) {
-    return this.stmt.get(...params);
+  async get(...params) {
+    const result = await client.execute({ sql: this.sql, args: params });
+    return result.rows[0] || undefined;
   }
-  all(...params) {
-    return this.stmt.all(...params);
+  async all(...params) {
+    const result = await client.execute({ sql: this.sql, args: params });
+    return result.rows;
   }
-  run(...params) {
-    const info = this.stmt.run(...params);
-    return { lastInsertRowid: info.lastInsertRowid, changes: info.changes };
+  async run(...params) {
+    const result = await client.execute({ sql: this.sql, args: params });
+    return {
+      lastInsertRowid: result.lastInsertRowid !== undefined ? Number(result.lastInsertRowid) : undefined,
+      changes: result.rowsAffected,
+    };
   }
 }
 
 const db = {
-  exec(sql) {
-    rawDb.exec(sql);
+  async exec(sql) {
+    // db/init.js sends one statement at a time, so a plain execute is fine.
+    await client.execute(sql);
   },
   prepare(sql) {
-    return new StatementWrapper(rawDb.prepare(sql));
+    return new StatementWrapper(sql);
   },
-  pragma(str) {
-    try {
-      rawDb.exec(`PRAGMA ${str}`);
-    } catch (e) {
-      // Some pragmas behave slightly differently here; safe to ignore.
-    }
-  },
-  close() {
-    rawDb.close();
+  async close() {
+    client.close();
   },
 };
 

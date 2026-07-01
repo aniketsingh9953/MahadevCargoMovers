@@ -9,6 +9,8 @@ const State = {
   consignments: [],
   searchQuery: '',
   toast: null,
+  dashboardFilters: { period: 'all', consignor: '', vehicle: '', consignee: '' },
+  selectedIds: new Set(),
 };
 
 const root = document.getElementById('app');
@@ -49,16 +51,46 @@ function escapeHtml(str) {
 
 // ===================== INIT =====================
 
-function init() {
-  const token = Api.getToken();
-  if (token) {
-    State.user = { username: Api.getUsername() };
+async function init() {
+  // Check whether the server considers the session cookie still valid.
+  // The cookie is httpOnly (invisible to JS) so we ask the server.
+  try {
+    const data = await Api.me();
+    State.user = { username: data.username };
     State.view = 'dashboard';
     renderApp();
-    loadConsignments();
-  } else {
+    
+    // Stagger the initial data fetch to allow state updates to cleanly settle
+    setTimeout(() => {
+      loadConsignments();
+      startSessionHeartbeat();
+    }, 50);
+  } catch (err) {
     renderLogin();
   }
+}
+
+// Poll the server every 60 seconds to check if the session is still valid.
+// This means: if the password is changed on another device, this tab shows
+// the login screen within ~60 seconds automatically, without the user having
+// to click anything. It also catches server-side idle-timeout expiry.
+function startSessionHeartbeat() {
+  if (window.__sessionHeartbeat) clearInterval(window.__sessionHeartbeat);
+  window.__sessionHeartbeat = setInterval(async () => {
+    try {
+      await Api.me(); // 401 = session gone server-side
+    } catch (err) {
+      clearInterval(window.__sessionHeartbeat);
+      State.user = null;
+      State.consignments = [];
+      renderLogin();
+      // Show a clear message so user knows why they were logged out
+      const errorEl = document.getElementById('login-error');
+      if (errorEl) {
+        errorEl.innerHTML = `<div class="error-banner">Your session has ended. Please log in again.</div>`;
+      }
+    }
+  }, 60 * 1000); // every 60 seconds
 }
 
 // ===================== LOGIN SCREEN =====================
@@ -104,12 +136,15 @@ function renderLogin() {
 
     try {
       const data = await Api.login(username, password);
-      Api.setToken(data.token);
-      Api.setUsername(data.username);
       State.user = { username: data.username };
       State.view = 'dashboard';
       renderApp();
-      loadConsignments();
+      
+      // Deliberately delay payload execution so the browser can securely 
+      // process and save the incoming authentication headers/cookies first.
+      setTimeout(() => {
+        loadConsignments();
+      }, 100);
     } catch (err) {
       errorEl.innerHTML = `<div class="error-banner">${escapeHtml(err.message)}</div>`;
       btn.disabled = false;
@@ -118,11 +153,20 @@ function renderLogin() {
   });
 }
 
-function logout() {
-  Api.clearToken();
-  State.user = null;
-  State.consignments = [];
-  renderLogin();
+async function logout() {
+  if (window.__sessionHeartbeat) {
+    clearInterval(window.__sessionHeartbeat);
+    window.__sessionHeartbeat = null;
+  }
+  try {
+    await Api.logout();
+  } catch (e) {
+    /* non-fatal fallback if logout request fails */
+  } finally {
+    State.user = null;
+    State.consignments = [];
+    renderLogin();
+  }
 }
 
 // ===================== APP SHELL =====================
@@ -192,7 +236,10 @@ async function loadConsignments() {
   try {
     State.consignments = await Api.listConsignments(State.searchQuery);
   } catch (err) {
-    showToast(err.message, 'error');
+    // Only display an implicit error toast if there's a valid global active session.
+    if (State.user) {
+      showToast(err.message, 'error');
+    }
   }
   if (State.view === 'dashboard' || State.view === 'list') renderMainContent();
 }
@@ -200,11 +247,51 @@ async function loadConsignments() {
 // ===================== DASHBOARD VIEW =====================
 
 function renderDashboard(main) {
-  const total = State.consignments.length;
+  const f = State.dashboardFilters;
+
+  // ----- Period filter (Weekly / Monthly / Yearly / All) -----
+  const now = new Date();
+  function inPeriod(c) {
+    if (f.period === 'all' || !c.lr_date) return true;
+    const d = new Date(c.lr_date);
+    if (isNaN(d)) return true;
+    if (f.period === 'week') {
+      const diffDays = (now - d) / (1000 * 60 * 60 * 24);
+      return diffDays >= 0 && diffDays < 7;
+    }
+    if (f.period === 'month') {
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    }
+    if (f.period === 'year') {
+      return d.getFullYear() === now.getFullYear();
+    }
+    return true;
+  }
+
+  // ----- Dropdown filter options, built from all data (not yet filtered) -----
+  const consignorOptions = [...new Set(State.consignments.map((c) => c.consignor_name_address).filter(Boolean))].sort();
+  const consigneeOptions = [...new Set(State.consignments.map((c) => c.consignee_name_address).filter(Boolean))].sort();
+  const vehicleOptions = [...new Set(State.consignments.map((c) => c.vehicle_no).filter(Boolean))].sort();
+
+  const filtered = State.consignments.filter((c) =>
+    inPeriod(c) &&
+    (!f.consignor || c.consignor_name_address === f.consignor) &&
+    (!f.consignee || c.consignee_name_address === f.consignee) &&
+    (!f.vehicle || c.vehicle_no === f.vehicle)
+  );
+
+  const total = filtered.length;
   const today = new Date().toISOString().slice(0, 10);
-  const todayCount = State.consignments.filter((c) => c.lr_date === today).length;
-  const totalWeight = State.consignments.reduce((sum, c) => sum + (parseFloat(c.charged_wt) || 0), 0);
-  const recent = State.consignments.slice(0, 6);
+  const todayCount = filtered.filter((c) => c.lr_date === today).length;
+  const totalWeight = filtered.reduce((sum, c) => sum + (parseFloat(c.charged_wt) || 0), 0);
+  const recent = filtered.slice(0, 8);
+
+  const periodTabs = [
+    { key: 'all', label: 'All Time' },
+    { key: 'week', label: 'Weekly' },
+    { key: 'month', label: 'Monthly' },
+    { key: 'year', label: 'Yearly' },
+  ];
 
   main.innerHTML = `
     <div class="page-header">
@@ -213,6 +300,28 @@ function renderDashboard(main) {
         <p>Overview of your consignment notes</p>
       </div>
       <button class="btn btn-accent" id="dash-new-btn">${Icons.plus} New Consignment Note</button>
+    </div>
+
+    <div class="dash-tabs" role="tablist" style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
+      ${periodTabs.map((t) => `
+        <button type="button" class="btn ${f.period === t.key ? 'btn-accent' : 'btn-ghost'} dash-tab-btn" data-period="${t.key}" style="padding:7px 16px; font-size:0.82rem;">${t.label}</button>
+      `).join('')}
+    </div>
+
+    <div class="dash-filters" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px;">
+      <select id="filter-consignor" style="max-width:220px;">
+        <option value="">All Consignors</option>
+        ${consignorOptions.map((v) => `<option value="${escapeHtml(v)}" ${f.consignor === v ? 'selected' : ''}>${escapeHtml(truncate(v, 30))}</option>`).join('')}
+      </select>
+      <select id="filter-consignee" style="max-width:220px;">
+        <option value="">All Consignees</option>
+        ${consigneeOptions.map((v) => `<option value="${escapeHtml(v)}" ${f.consignee === v ? 'selected' : ''}>${escapeHtml(truncate(v, 30))}</option>`).join('')}
+      </select>
+      <select id="filter-vehicle" style="max-width:180px;">
+        <option value="">All Vehicles</option>
+        ${vehicleOptions.map((v) => `<option value="${escapeHtml(v)}" ${f.vehicle === v ? 'selected' : ''}>${escapeHtml(v)}</option>`).join('')}
+      </select>
+      ${(f.consignor || f.consignee || f.vehicle) ? `<button type="button" class="btn btn-ghost" id="filter-clear" style="padding:7px 14px; font-size:0.82rem;">Clear filters</button>` : ''}
     </div>
 
     <div class="stats-row">
@@ -249,15 +358,46 @@ function renderDashboard(main) {
     renderApp();
   });
 
+  document.querySelectorAll('.dash-tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      State.dashboardFilters.period = btn.dataset.period;
+      renderMainContent();
+    });
+  });
+  document.getElementById('filter-consignor').addEventListener('change', (e) => {
+    State.dashboardFilters.consignor = e.target.value;
+    renderMainContent();
+  });
+  document.getElementById('filter-consignee').addEventListener('change', (e) => {
+    State.dashboardFilters.consignee = e.target.value;
+    renderMainContent();
+  });
+  document.getElementById('filter-vehicle').addEventListener('change', (e) => {
+    State.dashboardFilters.vehicle = e.target.value;
+    renderMainContent();
+  });
+  const clearBtn = document.getElementById('filter-clear');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      State.dashboardFilters.consignor = '';
+      State.dashboardFilters.consignee = '';
+      State.dashboardFilters.vehicle = '';
+      renderMainContent();
+    });
+  }
+
   attachTableActions(main);
 }
 
-function renderTable(rows) {
+function renderTable(rows, opts = {}) {
+  const selectable = !!opts.selectable;
+  const allSelected = selectable && rows.length > 0 && rows.every((c) => State.selectedIds.has(String(c.id)));
   return `
     <div class="table-wrap">
       <table class="lr-table">
         <thead>
           <tr>
+            ${selectable ? `<th style="width:32px;"><input type="checkbox" id="select-all-checkbox" ${allSelected ? 'checked' : ''} /></th>` : ''}
             <th>LR No.</th>
             <th>Date</th>
             <th>Route</th>
@@ -271,6 +411,7 @@ function renderTable(rows) {
         <tbody>
           ${rows.map((c) => `
             <tr>
+              ${selectable ? `<td><input type="checkbox" class="row-checkbox" data-id="${c.id}" ${State.selectedIds.has(String(c.id)) ? 'checked' : ''} /></td>` : ''}
               <td><span class="lr-no-badge">${escapeHtml(c.lr_no)}</span></td>
               <td>${escapeHtml(c.lr_date)}</td>
               <td>${escapeHtml(c.origin)} → ${escapeHtml(c.destination)}</td>
@@ -330,6 +471,103 @@ function attachTableActions(main) {
     btn.addEventListener('click', () => {
       confirmDelete(btn.dataset.id, btn.dataset.lr);
     });
+  });
+
+  // ----- Bulk selection (checkboxes) -----
+  const selectAllBox = main.querySelector('#select-all-checkbox');
+  if (selectAllBox) {
+    selectAllBox.addEventListener('change', (e) => {
+      main.querySelectorAll('.row-checkbox').forEach((cb) => {
+        if (e.target.checked) State.selectedIds.add(cb.dataset.id);
+        else State.selectedIds.delete(cb.dataset.id);
+      });
+      renderMainContent();
+    });
+  }
+  main.querySelectorAll('.row-checkbox').forEach((cb) => {
+    cb.addEventListener('change', (e) => {
+      if (e.target.checked) State.selectedIds.add(cb.dataset.id);
+      else State.selectedIds.delete(cb.dataset.id);
+      renderMainContent();
+    });
+  });
+
+  const bulkDownloadBtn = main.querySelector('#bulk-download-btn');
+  if (bulkDownloadBtn) {
+    bulkDownloadBtn.addEventListener('click', () => bulkDownloadSelected(main));
+  }
+  const bulkDeleteBtn = main.querySelector('#bulk-delete-btn');
+  if (bulkDeleteBtn) {
+    bulkDeleteBtn.addEventListener('click', () => confirmBulkDelete());
+  }
+  const bulkClearBtn = main.querySelector('#bulk-clear-btn');
+  if (bulkClearBtn) {
+    bulkClearBtn.addEventListener('click', () => {
+      State.selectedIds.clear();
+      renderMainContent();
+    });
+  }
+}
+
+// Downloads selected records as individual PDFs, one after another with a
+// short stagger so the browser doesn't treat the burst as spam and block it.
+async function bulkDownloadSelected(main) {
+  const ids = [...State.selectedIds];
+  if (ids.length === 0) return;
+  const btn = main.querySelector('#bulk-download-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> Downloading 0/${ids.length}...`; }
+
+  let done = 0;
+  for (const id of ids) {
+    const record = State.consignments.find((c) => String(c.id) === id);
+    try {
+      await Api.downloadPdf(id, record ? record.lr_no : id);
+    } catch (err) {
+      console.error('Bulk download failed for', id, err);
+    }
+    done++;
+    if (btn) btn.innerHTML = `<span class="spinner"></span> Downloading ${done}/${ids.length}...`;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  showToast(`Downloaded ${done} PDF${done === 1 ? '' : 's'}.`);
+  renderMainContent();
+}
+
+function confirmBulkDelete() {
+  const count = State.selectedIds.size;
+  if (count === 0) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <h3>Delete ${count} consignment note${count === 1 ? '' : 's'}?</h3>
+      <p>This will permanently delete ${count === 1 ? 'this record' : 'these records'}. This cannot be undone.</p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="bulk-delete-cancel">Cancel</button>
+        <button class="btn btn-danger" id="bulk-delete-confirm">Delete ${count === 1 ? 'It' : 'All'}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#bulk-delete-cancel').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#bulk-delete-confirm').addEventListener('click', async () => {
+    const confirmBtn = overlay.querySelector('#bulk-delete-confirm');
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = `<span class="spinner"></span>`;
+    const ids = [...State.selectedIds];
+    let deleted = 0;
+    for (const id of ids) {
+      try {
+        await Api.deleteConsignment(id);
+        deleted++;
+      } catch (err) {
+        console.error('Bulk delete failed for', id, err);
+      }
+    }
+    State.selectedIds.clear();
+    overlay.remove();
+    showToast(`Deleted ${deleted} record${deleted === 1 ? '' : 's'}.`);
+    await loadConsignments();
   });
 }
 
@@ -396,6 +634,8 @@ async function renderFormView(main) {
       destination: '',
       consignor_name_address: '',
       consignor_gstin: '',
+      consignor_mobile: '',
+      consignor_email: '',
       consignee_name_address: '',
       consignee_gstin: '',
       vehicle_no: '',
@@ -428,7 +668,7 @@ async function renderFormView(main) {
         <h1>${isEdit ? 'Edit Consignment Note' : 'New Consignment Note'}</h1>
         <p>Fields mirror your printed LR format — fill in and save.</p>
       </div>
-      <span class="risk-badge-preview">${escapeHtml(formData.risk_type || "Owner's Risk")}</span>
+      <span class="risk-badge-preview" id="risk-badge-preview">${escapeHtml(formData.risk_type || "Owner's Risk")}</span>
     </div>
 
     <form id="lr-form" class="lr-form">
@@ -490,6 +730,14 @@ async function renderFormView(main) {
         <div class="field-group">
           <label>Consignee GSTIN</label>
           <input type="text" name="consignee_gstin" value="${escapeHtml(formData.consignee_gstin)}" />
+        </div>
+        <div class="field-group">
+          <label>Consignor Mobile</label>
+          <input type="tel" name="consignor_mobile" value="${escapeHtml(formData.consignor_mobile)}" placeholder="9876543210" />
+        </div>
+        <div class="field-group">
+          <label>Consignor Email</label>
+          <input type="email" name="consignor_email" value="${escapeHtml(formData.consignor_email)}" placeholder="consignor@example.com" />
         </div>
       </div>
 
@@ -620,6 +868,10 @@ async function renderFormView(main) {
   });
 
   document.getElementById('lr-form').addEventListener('submit', handleFormSubmit);
+
+  document.getElementById('risk-type-select').addEventListener('change', (e) => {
+    document.getElementById('risk-badge-preview').textContent = e.target.value;
+  });
 }
 
 async function handleFormSubmit(e) {
@@ -661,6 +913,7 @@ async function handleFormSubmit(e) {
 // ===================== LIST VIEW =====================
 
 function renderListView(main) {
+  const selectedCount = State.selectedIds.size;
   main.innerHTML = `
     <div class="page-header">
       <div>
@@ -673,8 +926,16 @@ function renderListView(main) {
       <input type="text" id="search-input" placeholder="Search by LR no., vehicle, consignor, consignee, route..." value="${escapeHtml(State.searchQuery)}" />
       ${Icons.search}
     </div>
+    ${selectedCount > 0 ? `
+      <div class="bulk-action-bar" style="display:flex; align-items:center; gap:10px; background:var(--paper-dark); border:1px solid var(--border); border-radius:var(--radius); padding:10px 14px; margin-bottom:12px;">
+        <strong style="font-size:0.85rem; color:var(--navy);">${selectedCount} selected</strong>
+        <button type="button" class="btn btn-ghost" id="bulk-download-btn" style="padding:6px 12px; font-size:0.8rem;">${Icons.download} Download Selected</button>
+        <button type="button" class="btn btn-danger" id="bulk-delete-btn" style="padding:6px 12px; font-size:0.8rem;">${Icons.trash} Delete Selected</button>
+        <button type="button" class="btn btn-ghost" id="bulk-clear-btn" style="padding:6px 12px; font-size:0.8rem; margin-left:auto;">Clear selection</button>
+      </div>
+    ` : ''}
     <div class="panel">
-      ${State.consignments.length === 0 ? renderEmptyState() : renderTable(State.consignments)}
+      ${State.consignments.length === 0 ? renderEmptyState() : renderTable(State.consignments, { selectable: true })}
     </div>
   `;
 
@@ -688,8 +949,16 @@ function renderListView(main) {
   document.getElementById('search-input').addEventListener('input', (e) => {
     clearTimeout(debounceTimer);
     State.searchQuery = e.target.value;
+    const cursorPos = e.target.selectionStart;
     debounceTimer = setTimeout(async () => {
       await loadConsignments();
+      // The re-render above replaced the search input with a fresh DOM node,
+      // which stole focus. Restore focus + cursor position so typing isn't interrupted.
+      const freshInput = document.getElementById('search-input');
+      if (freshInput) {
+        freshInput.focus();
+        freshInput.setSelectionRange(cursorPos, cursorPos);
+      }
     }, 300);
   });
 
@@ -713,27 +982,70 @@ function renderSettingsView(main) {
       <form id="change-password-form">
         <div class="field-group">
           <label>Current Password</label>
-          <input type="password" name="currentPassword" required autocomplete="current-password" />
+          <div class="password-field">
+            <input type="password" name="currentPassword" id="pw-current" required autocomplete="current-password" />
+            <button type="button" class="icon-btn password-toggle" data-target="pw-current" title="Show/hide password">${Icons.eye || 'Show'}</button>
+          </div>
         </div>
         <div class="field-group">
           <label>New Password</label>
-          <input type="password" name="newPassword" required minlength="6" autocomplete="new-password" />
+          <div class="password-field">
+            <input type="password" name="newPassword" id="pw-new" required minlength="6" autocomplete="new-password" />
+            <button type="button" class="icon-btn password-toggle" data-target="pw-new" title="Show/hide password">${Icons.eye || 'Show'}</button>
+          </div>
           <div class="hint">At least 6 characters.</div>
+        </div>
+        <div class="field-group">
+          <label>Confirm New Password</label>
+          <div class="password-field">
+            <input type="password" name="confirmPassword" id="pw-confirm" required minlength="6" autocomplete="new-password" />
+            <button type="button" class="icon-btn password-toggle" data-target="pw-confirm" title="Show/hide password">${Icons.eye || 'Show'}</button>
+          </div>
+          <div class="hint" id="pw-match-hint"></div>
         </div>
         <button type="submit" class="btn btn-primary" id="change-pw-btn">Update Password</button>
       </form>
     </div>
   `;
 
+  // Eye toggle buttons — flip the matching input between password/text and swap the icon.
+  document.querySelectorAll('.password-toggle').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const input = document.getElementById(btn.dataset.target);
+      const showing = input.type === 'text';
+      input.type = showing ? 'password' : 'text';
+      btn.innerHTML = (showing ? Icons.eye : Icons.eyeOff) || (showing ? 'Show' : 'Hide');
+    });
+  });
+
+  // Live feedback if new password and confirm don't match yet.
+  const newPwEl = document.getElementById('pw-new');
+  const confirmPwEl = document.getElementById('pw-confirm');
+  const matchHint = document.getElementById('pw-match-hint');
+  function checkMatch() {
+    if (!confirmPwEl.value) { matchHint.textContent = ''; return; }
+    matchHint.textContent = newPwEl.value === confirmPwEl.value ? '' : 'Passwords do not match.';
+    matchHint.style.color = 'var(--danger)';
+  }
+  newPwEl.addEventListener('input', checkMatch);
+  confirmPwEl.addEventListener('input', checkMatch);
+
   document.getElementById('change-password-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
     const currentPassword = fd.get('currentPassword');
     const newPassword = fd.get('newPassword');
+    const confirmPassword = fd.get('confirmPassword');
     const msgEl = document.getElementById('settings-msg');
     const btn = document.getElementById('change-pw-btn');
 
     msgEl.innerHTML = '';
+
+    if (newPassword !== confirmPassword) {
+      msgEl.innerHTML = `<div class="error-banner">New password and confirmation do not match.</div>`;
+      return;
+    }
+
     btn.disabled = true;
 
     try {
@@ -747,5 +1059,22 @@ function renderSettingsView(main) {
     }
   });
 }
+
+// If any API call returns 401 (session expired/invalidated server-side),
+// immediately show the login screen — don't leave the user on a broken page.
+window.addEventListener('mcm:session-expired', () => {
+  // If the user isn't even logged in yet, ignore rogue trailing 401 data calls
+  if (!State.user) return;
+
+  if (window.__sessionHeartbeat) clearInterval(window.__sessionHeartbeat);
+  State.user = null;
+  State.consignments = [];
+  renderLogin();
+  
+  const errorEl = document.getElementById('login-error');
+  if (errorEl) {
+    errorEl.innerHTML = `<div class="error-banner">Your session has ended. Please log in again.</div>`;
+  }
+});
 
 init();

@@ -4,11 +4,12 @@ const router = express.Router();
 const PDFDocument = require('pdfkit');
 const db = require('../db/connection');
 const { requireAuth } = require('./auth');
+const asyncHandler = require('../utils/asyncHandler');
 
 router.use(requireAuth);
 
 const PAGE_WIDTH = 595.28; // A4 in points
-const MARGIN = 36;
+const MARGIN = 28;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
 
 function fmtDate(d) {
@@ -29,15 +30,15 @@ function fmtDateTime(d) {
 
 function drawSectionHeader(doc, y, label) {
   doc
-    .rect(MARGIN, y, CONTENT_WIDTH, 16)
+    .rect(MARGIN, y, CONTENT_WIDTH, 13)
     .fillAndStroke('#0F1C2E', '#0F1C2E');
   doc
     .fillColor('#FFFFFF')
     .font('Helvetica-Bold')
-    .fontSize(8)
-    .text(label, MARGIN + 6, y + 4, { characterSpacing: 0.5 });
+    .fontSize(7.2)
+    .text(label, MARGIN + 6, y + 3, { characterSpacing: 0.4 });
   doc.fillColor('#1A1A1A');
-  return y + 16;
+  return y + 13;
 }
 
 function labelValue(doc, x, y, label, value, width) {
@@ -45,9 +46,47 @@ function labelValue(doc, x, y, label, value, width) {
   doc.font('Helvetica-Bold').fontSize(9).fillColor('#1A1A1A').text(value || '-', x, y + 9, { width });
 }
 
+// Draws one row of bordered grid cells (label on top, value below), each
+// sized to whatever width is given, with the row height auto-growing to fit
+// the longest-wrapping value — same dynamic-grid behaviour as the goods table,
+// so long text always stays inside its box instead of overflowing.
+function drawGridRow(doc, y, cells, colWidths) {
+  const padX = 5;
+  const padTop = 3;
+  const labelH = 7.5;
+  const rowTop = y;
+
+  doc.font('Helvetica-Bold').fontSize(7.8);
+  const heights = cells.map((cell, i) =>
+    doc.heightOfString(cell.value || '-', { width: colWidths[i] - padX * 2 })
+  );
+  const rowH = padTop + labelH + Math.max(...heights) + 4;
+
+  // Outer + vertical dividers
+  let tx = MARGIN;
+  doc.lineWidth(0.5).strokeColor('#5C6B7A');
+  doc.rect(MARGIN, rowTop, colWidths.reduce((a, b) => a + b, 0), rowH).stroke();
+  colWidths.forEach((w, i) => {
+    if (i > 0) doc.moveTo(tx, rowTop).lineTo(tx, rowTop + rowH).stroke();
+    tx += w;
+  });
+
+  // Label + value text
+  tx = MARGIN;
+  cells.forEach((cell, i) => {
+    doc.font('Helvetica').fontSize(5.8).fillColor('#5C6B7A')
+      .text(cell.label.toUpperCase(), tx + padX, rowTop + padTop, { width: colWidths[i] - padX * 2 });
+    doc.font('Helvetica-Bold').fontSize(7.8).fillColor('#1A1A1A')
+      .text(cell.value || '-', tx + padX, rowTop + padTop + labelH, { width: colWidths[i] - padX * 2 });
+    tx += colWidths[i];
+  });
+
+  return rowTop + rowH;
+}
+
 // GET /api/pdf/:id — stream a generated PDF for one consignment note
-router.get('/:id', (req, res) => {
-  const c = db.prepare('SELECT * FROM consignment_notes WHERE id = ?').get(req.params.id);
+router.get('/:id', asyncHandler(async (req, res) => {
+  const c = await db.prepare('SELECT * FROM consignment_notes WHERE id = ?').get(req.params.id);
   if (!c) return res.status(404).json({ error: 'Consignment note not found.' });
 
   const doc = new PDFDocument({ size: 'A4', margin: MARGIN });
@@ -59,110 +98,119 @@ router.get('/:id', (req, res) => {
   let y = MARGIN;
 
   // ----- Header / Company block -----
-  doc.font('Helvetica-Bold').fontSize(18).fillColor('#0F1C2E')
+  doc.font('Helvetica-Bold').fontSize(15).fillColor('#0F1C2E')
     .text('MAHADEV CARGO MOVERS', MARGIN, y);
-  y += 20;
-  doc.font('Helvetica').fontSize(8).fillColor('#5C6B7A')
+  y += 16;
+  doc.font('Helvetica').fontSize(7).fillColor('#5C6B7A')
     .text('Fleet Owner | Transport Contractor | Commission Agent', MARGIN, y);
-  y += 11;
+  y += 9;
   doc.text('Zamar Kotda Road, Near Kalika Resort, Umarda, Udaipur - 313003', MARGIN, y);
-  y += 10;
+  y += 8.5;
   doc.text('Mob: 8209490565 / 7015741767  |  Email: mahadevcargomovers@gmail.com', MARGIN, y);
-  y += 10;
+  y += 8.5;
   doc.text('GSTIN: 08CLXPS2117L1ZC   |   PAN: CLKPS2117L', MARGIN, y);
-  y += 14;
+  y += 12;
 
   // Title bar
-  doc.rect(MARGIN, y, CONTENT_WIDTH, 18).fillAndStroke('#E8A33D', '#E8A33D');
-  doc.fillColor('#0F1C2E').font('Helvetica-Bold').fontSize(11)
-    .text('CONSIGNMENT NOTE', MARGIN, y + 4, { width: CONTENT_WIDTH, align: 'center' });
+  doc.rect(MARGIN, y, CONTENT_WIDTH, 15).fillAndStroke('#E8A33D', '#E8A33D');
+  doc.fillColor('#0F1C2E').font('Helvetica-Bold').fontSize(9.5)
+    .text('CONSIGNMENT NOTE', MARGIN, y + 3.5, { width: CONTENT_WIDTH, align: 'center' });
   doc.fillColor('#1A1A1A');
-  y += 26;
+  y += 19;
 
   // ----- Origin / Destination -----
-  const halfWidth = CONTENT_WIDTH / 2 - 6;
-  labelValue(doc, MARGIN, y, 'From (Origin)', c.origin, halfWidth);
-  labelValue(doc, MARGIN + halfWidth + 12, y, 'To (Destination)', c.destination, halfWidth);
-  y += 26;
+  const halfWidth = CONTENT_WIDTH / 2;
+  y = drawGridRow(doc, y,
+    [{ label: 'From (Origin)', value: c.origin }, { label: 'To (Destination)', value: c.destination }],
+    [halfWidth, halfWidth]
+  );
 
   // ----- LR No / Date / EDD / Mode -----
-  const colW = CONTENT_WIDTH / 4 - 6;
-  labelValue(doc, MARGIN, y, 'LR No.', c.lr_no, colW);
-  labelValue(doc, MARGIN + colW + 8, y, 'LR Date', fmtDate(c.lr_date), colW);
-  labelValue(doc, MARGIN + (colW + 8) * 2, y, 'EDD', fmtDate(c.edd), colW);
-  labelValue(doc, MARGIN + (colW + 8) * 3, y, 'Booking Mode', c.booking_mode, colW);
-  y += 26;
+  const colW = CONTENT_WIDTH / 4;
+  y = drawGridRow(doc, y, [
+    { label: 'LR No.', value: c.lr_no },
+    { label: 'LR Date', value: fmtDate(c.lr_date) },
+    { label: 'EDD', value: fmtDate(c.edd) },
+    { label: 'Booking Mode', value: c.booking_mode },
+  ], [colW, colW, colW, colW]);
+  y += 4;
 
   // ----- Consignor / Consignee -----
   y = drawSectionHeader(doc, y, 'CONSIGNOR & CONSIGNEE');
-  y += 6;
-  doc.font('Helvetica').fontSize(6.5).fillColor('#5C6B7A').text('CONSIGNOR NAME & ADDRESS', MARGIN, y, { width: halfWidth });
-  doc.text('CONSIGNEE NAME & ADDRESS', MARGIN + halfWidth + 12, y, { width: halfWidth });
-  y += 9;
-  doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#1A1A1A')
-    .text(c.consignor_name_address || '-', MARGIN, y, { width: halfWidth });
-  doc.text(c.consignee_name_address || '-', MARGIN + halfWidth + 12, y, { width: halfWidth });
-  y += 26;
-  doc.font('Helvetica').fontSize(6.5).fillColor('#5C6B7A').text('GSTIN: ' + (c.consignor_gstin || '-'), MARGIN, y, { width: halfWidth });
-  doc.text('GSTIN: ' + (c.consignee_gstin || '-'), MARGIN + halfWidth + 12, y, { width: halfWidth });
-  y += 14;
+  const consignorValue = `${c.consignor_name_address || '-'}\nGSTIN: ${c.consignor_gstin || '-'}\nMobile: ${c.consignor_mobile || '-'}   Email: ${c.consignor_email || '-'}`;
+  const consigneeValue = `${c.consignee_name_address || '-'}\nGSTIN: ${c.consignee_gstin || '-'}`;
+  y = drawGridRow(doc, y, [
+    { label: 'Consignor Name & Address', value: consignorValue },
+    { label: 'Consignee Name & Address', value: consigneeValue },
+  ], [halfWidth, halfWidth]);
+  y += 4;
 
   // ----- Vehicle & Shipment -----
   y = drawSectionHeader(doc, y, 'VEHICLE & SHIPMENT DETAILS');
-  y += 6;
-  const vColW = CONTENT_WIDTH / 4 - 6;
-  labelValue(doc, MARGIN, y, 'Vehicle No.', c.vehicle_no, vColW);
-  labelValue(doc, MARGIN + vColW + 8, y, 'Driver Name', c.driver_name, vColW);
-  labelValue(doc, MARGIN + (vColW + 8) * 2, y, 'Driver Mobile', c.driver_mobile, vColW);
-  labelValue(doc, MARGIN + (vColW + 8) * 3, y, 'Vehicle Type', c.vehicle_type, vColW);
-  y += 28;
+  const vColW = CONTENT_WIDTH / 4;
+  y = drawGridRow(doc, y, [
+    { label: 'Vehicle No.', value: c.vehicle_no },
+    { label: 'Driver Name', value: c.driver_name },
+    { label: 'Driver Mobile', value: c.driver_mobile },
+    { label: 'Vehicle Type', value: c.vehicle_type },
+  ], [vColW, vColW, vColW, vColW]);
+  y += 4;
 
   // ----- Invoice & E-way Bill -----
   y = drawSectionHeader(doc, y, 'INVOICE & E-WAY BILL DETAILS');
-  y += 6;
-  const iColW = (CONTENT_WIDTH - 16) / 3;
-  labelValue(doc, MARGIN, y, 'E-Way Bill No.', c.eway_bill_no, iColW);
-  labelValue(doc, MARGIN + iColW + 8, y, 'EWB Validity', fmtDate(c.eway_validity), iColW);
-  labelValue(doc, MARGIN + (iColW + 8) * 2, y, 'Invoice No.', c.invoice_no, iColW);
-  y += 22;
-  labelValue(doc, MARGIN, y, 'Invoice Date', fmtDate(c.invoice_date), iColW);
-  labelValue(doc, MARGIN + iColW + 8, y, 'Invoice Value (Rs.)', c.invoice_value, iColW);
-  y += 26;
+  const iColW = CONTENT_WIDTH / 3;
+  y = drawGridRow(doc, y, [
+    { label: 'E-Way Bill No.', value: c.eway_bill_no },
+    { label: 'EWB Validity', value: fmtDate(c.eway_validity) },
+    { label: 'Invoice No.', value: c.invoice_no },
+  ], [iColW, iColW, iColW]);
+  const iColW2 = CONTENT_WIDTH / 2;
+  y = drawGridRow(doc, y, [
+    { label: 'Invoice Date', value: fmtDate(c.invoice_date) },
+    { label: 'Invoice Value (Rs.)', value: c.invoice_value },
+  ], [iColW2, iColW2]);
+  y += 4;
 
   // ----- Insurance -----
-  doc.font('Helvetica').fontSize(6.5).fillColor('#5C6B7A').text('INSURANCE DETAIL / SPECIAL INSTRUCTIONS', MARGIN, y);
-  y += 9;
-  doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#1A1A1A').text(c.insurance_detail || '-', MARGIN, y, { width: CONTENT_WIDTH });
-  y += 26;
+  y = drawGridRow(doc, y, [
+    { label: 'Insurance Detail / Special Instructions', value: c.insurance_detail },
+  ], [CONTENT_WIDTH]);
+  y += 4;
 
   // ----- Goods Description Table -----
   y = drawSectionHeader(doc, y, 'GOODS DESCRIPTION (SAID TO CONTAIN)');
-  y += 6;
 
   const tableHeaders = ['Pkgs (Nos.)', 'Packing Type', 'Description of Goods', 'Actual Wt (Kg)', 'Charged Wt (Kg)', 'Customer Ref. No.'];
   const tableColWidths = [55, 65, 150, 65, 70, CONTENT_WIDTH - 405];
   const tableTop = y;
-  const headerRowH = 16;
-  const dataRowH = 22;
+  const headerRowH = 13;
   const tablePadX = 4;
+  const cellVPad = 4;
 
   // Header row background + text
   doc.rect(MARGIN, y, CONTENT_WIDTH, headerRowH).fillAndStroke('#F0EDE6', '#5C6B7A');
   let tx = MARGIN;
-  doc.font('Helvetica-Bold').fontSize(7).fillColor('#5C6B7A');
+  doc.font('Helvetica-Bold').fontSize(6.3).fillColor('#5C6B7A');
   tableHeaders.forEach((h, i) => {
-    doc.text(h, tx + tablePadX, y + 4, { width: tableColWidths[i] - tablePadX * 2 });
+    doc.text(h, tx + tablePadX, y + 3, { width: tableColWidths[i] - tablePadX * 2 });
     tx += tableColWidths[i];
   });
   y += headerRowH;
 
-  // Data row
-  doc.rect(MARGIN, y, CONTENT_WIDTH, dataRowH).stroke('#5C6B7A');
+  // Data row — height is dynamic: grows to fit whichever cell wraps the most
+  // (e.g. a long goods description), so text never spills outside its box.
   const rowValues = [c.pkgs_nos, c.packing_type, c.goods_description, c.actual_wt, c.charged_wt, c.customer_ref_no];
+  doc.font('Helvetica').fontSize(7.5);
+  const cellHeights = rowValues.map((v, i) =>
+    doc.heightOfString(v || '-', { width: tableColWidths[i] - tablePadX * 2 })
+  );
+  const dataRowH = Math.max(...cellHeights) + cellVPad * 2;
+
+  doc.rect(MARGIN, y, CONTENT_WIDTH, dataRowH).stroke('#5C6B7A');
   tx = MARGIN;
-  doc.font('Helvetica').fontSize(8.5).fillColor('#1A1A1A');
+  doc.font('Helvetica').fontSize(7.5).fillColor('#1A1A1A');
   rowValues.forEach((v, i) => {
-    doc.text(v || '-', tx + tablePadX, y + 6, { width: tableColWidths[i] - tablePadX * 2 });
+    doc.text(v || '-', tx + tablePadX, y + cellVPad, { width: tableColWidths[i] - tablePadX * 2 });
     tx += tableColWidths[i];
   });
   y += dataRowH;
@@ -177,25 +225,33 @@ router.get('/:id', (req, res) => {
   // Outer border (redraw crisply over the two rects)
   doc.rect(MARGIN, tableTop, CONTENT_WIDTH, headerRowH + dataRowH).stroke('#5C6B7A');
 
-  y += 14;
+  y += 4;
 
   // ----- Loading details / Payment / Risk -----
   y = drawSectionHeader(doc, y, 'LOADING DETAILS, PAYMENT & REMARKS');
-  y += 6;
-  const lColW = CONTENT_WIDTH / 4 - 6;
-  labelValue(doc, MARGIN, y, 'Vehicle IN (Loading)', fmtDateTime(c.vehicle_in_time), lColW);
-  labelValue(doc, MARGIN + lColW + 8, y, 'Vehicle OUT (Loading)', fmtDateTime(c.vehicle_out_time), lColW);
-  labelValue(doc, MARGIN + (lColW + 8) * 2, y, 'GST Payable By', c.gst_payable_by, lColW);
-  labelValue(doc, MARGIN + (lColW + 8) * 3, y, 'Risk Type', c.risk_type, lColW);
-  y += 26;
+  const lColW = CONTENT_WIDTH / 4;
+  y = drawGridRow(doc, y, [
+    { label: 'Vehicle IN (Loading)', value: fmtDateTime(c.vehicle_in_time) },
+    { label: 'Vehicle OUT (Loading)', value: fmtDateTime(c.vehicle_out_time) },
+    { label: 'GST Payable By', value: c.gst_payable_by },
+    { label: 'Risk Type', value: c.risk_type },
+  ], [lColW, lColW, lColW, lColW]);
 
-  doc.font('Helvetica').fontSize(6.5).fillColor('#5C6B7A').text('REMARKS', MARGIN, y);
-  y += 9;
-  doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#1A1A1A').text(c.remarks || '-', MARGIN, y, { width: CONTENT_WIDTH });
-  y += 20;
+  const remarksColWidth = CONTENT_WIDTH / 2;
+  const bankDetailValue = 'MAHADEV CARGO MOVERS\nBank Name: ICICI Bank Ltd\nA/c No: 693705500442\nIFSC Code: ICIC0006937';
+  y = drawGridRow(doc, y, [
+    { label: 'Remarks', value: c.remarks },
+    { label: 'Bank Detail', value: bankDetailValue },
+  ], [remarksColWidth, remarksColWidth]);
+  y += 16;
 
   // ----- Terms & Conditions -----
-  if (y > 560) { doc.addPage(); y = MARGIN; }
+  // Reserve enough room for the terms block + declaration + signature area
+  // before deciding whether a page break is actually needed (the old fixed
+  // threshold here was left over from a taller layout and broke the page
+  // prematurely even when there was plenty of space left).
+  const PAGE_BOTTOM = doc.page.height - MARGIN;
+  if (y > PAGE_BOTTOM - 230) { doc.addPage(); y = MARGIN; }
   y = drawSectionHeader(doc, y, 'TERMS & CONDITIONS - AT OWNER\'S RISK');
   y += 8;
   const terms = [
@@ -207,11 +263,25 @@ router.get('/:id', (req, res) => {
     "Demurrage @ Rs.4/quintal after 7 days from arrival. Re-booking charges extra. Perishable goods disposed after 48 hrs if undelivered.",
     "Jurisdiction: UDAIPUR ONLY. All disputes, claims & matters subject to Udaipur courts only. This CN is legal & valid as per IT Act 2000.",
   ];
-  doc.font('Helvetica').fontSize(6.8).fillColor('#1A1A1A');
-  terms.forEach((t, i) => {
-    doc.text(`${i + 1}. ${t}`, MARGIN, y, { width: CONTENT_WIDTH });
-    y += doc.heightOfString(`${i + 1}. ${t}`, { width: CONTENT_WIDTH }) + 2;
+  doc.font('Helvetica').fontSize(6.5).fillColor('#1A1A1A');
+  const termsColWidth = CONTENT_WIDTH / 2 - 8;
+  const half = Math.ceil(terms.length / 2);
+  const leftTerms = terms.slice(0, half);
+  const rightTerms = terms.slice(half);
+  const termsTop = y;
+  let yLeft = termsTop;
+  leftTerms.forEach((t, i) => {
+    const line = `${i + 1}. ${t}`;
+    doc.text(line, MARGIN, yLeft, { width: termsColWidth });
+    yLeft += doc.heightOfString(line, { width: termsColWidth }) + 2;
   });
+  let yRight = termsTop;
+  rightTerms.forEach((t, i) => {
+    const line = `${half + i + 1}. ${t}`;
+    doc.text(line, MARGIN + termsColWidth + 16, yRight, { width: termsColWidth });
+    yRight += doc.heightOfString(line, { width: termsColWidth }) + 2;
+  });
+  y = Math.max(yLeft, yRight);
 
   y += 6;
   doc.font('Helvetica-Oblique').fontSize(6.8).fillColor('#5C6B7A').text(
@@ -221,8 +291,8 @@ router.get('/:id', (req, res) => {
   y += 24;
 
   // ----- Signature blocks -----
-  y += 30; // blank space reserved for actual wet signatures
-  if (y > 720) { doc.addPage(); y = MARGIN; }
+  y += 18; // blank space reserved for actual wet signatures
+  if (y > PAGE_BOTTOM - 70) { doc.addPage(); y = MARGIN; }
   const sigColWidth = CONTENT_WIDTH / 2 - 6;
   doc.moveTo(MARGIN, y).lineTo(MARGIN + sigColWidth, y).strokeColor('#1A1A1A').lineWidth(0.5).stroke();
   doc.moveTo(MARGIN + sigColWidth + 12, y).lineTo(MARGIN + CONTENT_WIDTH, y).stroke();
@@ -236,6 +306,6 @@ router.get('/:id', (req, res) => {
   doc.font('Helvetica').fontSize(7.5).text('Authorised Signatory', MARGIN, y);
 
   doc.end();
-});
+}));
 
 module.exports = router;

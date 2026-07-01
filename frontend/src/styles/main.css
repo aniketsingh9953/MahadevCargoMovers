@@ -389,6 +389,7 @@ table.lr-table tbody td {
   white-space: nowrap;
 }
 table.lr-table tbody tr:hover { background: var(--paper); }
+table.lr-table input[type="checkbox"] { width: 15px; height: 15px; cursor: pointer; }
 
 .lr-no-badge {
   font-family: var(--font-mono);
