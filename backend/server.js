@@ -2,6 +2,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 
@@ -22,9 +23,10 @@ if (!process.env.JWT_SECRET) {
 }
 
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
-}));
-app.use(express.json({ limit: '2mb' }));
+     origin: process.env.CORS_ORIGIN || '*',
+   }));
+   app.use(cookieParser());
+   app.use(express.json({ limit: '2mb' }));
 
 // Basic rate limiting on login to slow down brute-force attempts.
 const loginLimiter = rateLimit({
