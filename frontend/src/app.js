@@ -145,11 +145,19 @@ function renderLogin() {
 }
 
 async function logout() {
-  if (window.__sessionHeartbeat) clearInterval(window.__sessionHeartbeat);
-  await Api.logout();
-  State.user = null;
-  State.consignments = [];
-  renderLogin();
+  if (window.__sessionHeartbeat) {
+    clearInterval(window.__sessionHeartbeat);
+    window.__sessionHeartbeat = null;
+  }
+  try {
+    await Api.logout();
+  } catch (e) {
+    /* non-fatal fallback if logout request fails */
+  } finally {
+    State.user = null;
+    State.consignments = [];
+    renderLogin();
+  }
 }
 
 // ===================== APP SHELL =====================
@@ -1042,15 +1050,19 @@ function renderSettingsView(main) {
 
 // If any API call returns 401 (session expired/invalidated server-side),
 // immediately show the login screen — don't leave the user on a broken page.
+// --- CORRECTED CODE ---
 window.addEventListener('mcm:session-expired', () => {
+  // If the user isn't even logged in yet, ignore rogue trailing 401 data calls
+  if (!State.user) return;
+
   if (window.__sessionHeartbeat) clearInterval(window.__sessionHeartbeat);
   State.user = null;
   State.consignments = [];
   renderLogin();
+  
   const errorEl = document.getElementById('login-error');
   if (errorEl) {
     errorEl.innerHTML = `<div class="error-banner">Your session has ended. Please log in again.</div>`;
   }
 });
-
 init();
