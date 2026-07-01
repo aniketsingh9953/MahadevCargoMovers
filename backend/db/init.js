@@ -9,7 +9,6 @@ const bcrypt = require('bcryptjs');
 async function main() {
   console.log('Initializing database on Turso:', process.env.TURSO_DATABASE_URL);
 
-<<<<<<< HEAD
   await db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,7 +26,6 @@ async function main() {
   } catch (err) {
     // Column already exists — fine, ignore.
   }
-=======
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,7 +51,7 @@ db.exec(`
     lr_date TEXT NOT NULL,
     edd TEXT,
     booking_mode TEXT,
->>>>>>> 0ec00a2bee8e0cd5d50a66cb6dcdf034160b77b0
+
 
   await db.exec(`
     CREATE TABLE IF NOT EXISTS consignment_notes (
@@ -63,17 +61,16 @@ db.exec(`
       edd TEXT,
       booking_mode TEXT,
 
-<<<<<<< HEAD
+
       origin TEXT,
       destination TEXT,
-=======
+
     consignor_name_address TEXT,
     consignor_gstin TEXT,
     consignor_mobile TEXT,
     consignor_email TEXT,
     consignee_name_address TEXT,
     consignee_gstin TEXT,
->>>>>>> 0ec00a2bee8e0cd5d50a66cb6dcdf034160b77b0
 
       consignor_name_address TEXT,
       consignor_gstin TEXT,
@@ -109,12 +106,11 @@ db.exec(`
 
       remarks TEXT,
 
-<<<<<<< HEAD
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
   `);
-=======
+
 // Migrations for consignment_notes columns added after initial release.
 for (const col of ['consignor_mobile', 'consignor_email']) {
   try {
@@ -127,7 +123,7 @@ for (const col of ['consignor_mobile', 'consignor_email']) {
 
 // Create the default admin user if none exists yet.
 const existing = db.prepare('SELECT COUNT(*) as count FROM users').get();
->>>>>>> 0ec00a2bee8e0cd5d50a66cb6dcdf034160b77b0
+
 
   // Migrations for consignment_notes columns added after initial release.
   for (const col of ['consignor_mobile', 'consignor_email']) {
