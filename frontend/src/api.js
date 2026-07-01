@@ -29,16 +29,23 @@ const Api = {
       credentials: 'include', // always send/receive the session cookie
     });
 
-    // A 401 on any route other than the login attempt itself means the session
-    // cookie is missing/expired/invalidated server-side. Force immediate
-    // redirect to login so the user isn't left staring at a broken app.
+    // --- FIXED LOGIC ---
+    // A 401 means unauthorized. However, we only treat it as an "expired session" 
+    // interrupt if it happens mid-app navigation on data endpoints. 
+    // 1. Exclude the explicit login route.
+    // 2. Exclude the initial handshake route (/auth/me) which naturally 401s if a user is fresh.
+    // 3. Exclude logout to prevent circular event triggers during cleanup.
     const isLoginAttempt = path === '/auth/login';
-    if (res.status === 401 && !isLoginAttempt) {
+    const isInitialAuthCheck = path === '/auth/me';
+    const isLogoutAttempt = path === '/auth/logout';
+
+    if (res.status === 401 && !isLoginAttempt && !isInitialAuthCheck && !isLogoutAttempt) {
       this.setUsername(null);
       // Dispatch a custom event so app.js can react immediately
       // (catches cases where the 401 happens mid-task, e.g. saving a form)
       window.dispatchEvent(new CustomEvent('mcm:session-expired'));
     }
+    // ---------------------
 
     const contentType = res.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
