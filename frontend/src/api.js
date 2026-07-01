@@ -1,43 +1,43 @@
 // api.js
-// Small wrapper around fetch() that attaches the login token and
-// handles JSON parsing + error messages consistently.
+// Small wrapper around fetch() that handles JSON parsing + error messages
+// consistently. The session is now an httpOnly cookie set by the server —
+// this file never touches localStorage for auth, and never sees the token
+// itself (that's the point: JS can't read or leak an httpOnly cookie).
 
 const Api = {
-  getToken() {
-    return localStorage.getItem('mcm_token');
-  },
-  setToken(token) {
-    localStorage.setItem('mcm_token', token);
-  },
-  clearToken() {
-    localStorage.removeItem('mcm_token');
-    localStorage.removeItem('mcm_username');
-  },
+  // Username is just a display convenience, not a credential — safe to keep
+  // in sessionStorage for showing "Logged in as ___" without a round-trip,
+  // but it carries no authority. Real auth state always lives in the
+  // httpOnly cookie and is verified server-side on every request.
   getUsername() {
-    return localStorage.getItem('mcm_username');
+    return sessionStorage.getItem('mcm_username');
   },
   setUsername(name) {
-    localStorage.setItem('mcm_username', name);
+    if (name) sessionStorage.setItem('mcm_username', name);
+    else sessionStorage.removeItem('mcm_username');
   },
 
   async request(path, options = {}) {
-    const token = this.getToken();
     const headers = {
       'Content-Type': 'application/json',
       ...(options.headers || {}),
     };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers,
+      credentials: 'include', // always send/receive the session cookie
+    });
 
-    // Only treat a 401 as "your session expired" when we actually sent an existing
-    // token. A failed /auth/login attempt also returns 401 for wrong credentials,
-    // and that should just show an error — not force-reload the page (which was
-    // wiping the error message off-screen in under a second).
-    if (res.status === 401 && token) {
-      this.clearToken();
-      window.location.reload();
-      throw new Error('Session expired. Please log in again.');
+    // A 401 on any route other than the login attempt itself means the session
+    // cookie is missing/expired/invalidated server-side. Force immediate
+    // redirect to login so the user isn't left staring at a broken app.
+    const isLoginAttempt = path === '/auth/login';
+    if (res.status === 401 && !isLoginAttempt) {
+      this.setUsername(null);
+      // Dispatch a custom event so app.js can react immediately
+      // (catches cases where the 401 happens mid-task, e.g. saving a form)
+      window.dispatchEvent(new CustomEvent('mcm:session-expired'));
     }
 
     const contentType = res.headers.get('content-type') || '';
@@ -53,11 +53,30 @@ const Api = {
     return data;
   },
 
-  login(username, password) {
-    return this.request('/auth/login', {
+  async login(username, password) {
+    const data = await this.request('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     });
+    this.setUsername(data.username);
+    return data;
+  },
+
+  // Asks the server whether the current session cookie is still valid.
+  // Used on page load instead of checking localStorage, since the cookie
+  // itself is invisible to JS by design.
+  async me() {
+    const data = await this.request('/auth/me');
+    this.setUsername(data.username);
+    return data;
+  },
+
+  async logout() {
+    try {
+      await this.request('/auth/logout', { method: 'POST' });
+    } finally {
+      this.setUsername(null);
+    }
   },
 
   changePassword(currentPassword, newPassword) {
@@ -99,9 +118,8 @@ const Api = {
   },
 
   async downloadPdf(id, lrNo) {
-    const token = this.getToken();
     const res = await fetch(`${API_BASE}/pdf/${id}`, {
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include', // session cookie sent automatically
     });
     if (!res.ok) throw new Error('Could not generate PDF.');
     const blob = await res.blob();
