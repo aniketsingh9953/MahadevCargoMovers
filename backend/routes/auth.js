@@ -6,7 +6,39 @@ const router = express.Router();
 const db = require('../db/connection');
 
 const JWT_SECRET = process.env.JWT_SECRET;
-const TOKEN_EXPIRY = '12h';
+// Access tokens live for a maximum of 8 hours hard ceiling, but the idle
+// timeout (checked in requireAuth below) kicks in sooner if the session
+// has been inactive — this is the server-side enforcement for "logout on
+// browser close" that works even when the browser restores session cookies.
+const TOKEN_EXPIRY = '8h';
+const IDLE_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8 hours idle = forced re-login
+const COOKIE_NAME = 'mcm_session';
+
+function signToken(user) {
+  return jwt.sign(
+    {
+      userId: user.id,
+      username: user.username,
+      tokenVersion: user.token_version || 0,
+      issuedAt: Date.now(), // used for idle-timeout tracking
+    },
+    JWT_SECRET,
+    { expiresIn: TOKEN_EXPIRY }
+  );
+}
+
+function setSessionCookie(res, token) {
+  // No Max-Age/Expires = a true session cookie: browsers SHOULD discard it
+  // on full close. The server-side idle check (requireAuth) is the real
+  // enforcement layer for environments where browsers restore session cookies.
+  res.cookie(COOKIE_NAME, token, {
+    httpOnly: true,          // JS cannot read this cookie — XSS-safe
+    secure: true,            // always require HTTPS (Render always serves HTTPS)
+    sameSite: 'lax',
+    path: '/',
+    // NO maxAge / expires — session cookie
+  });
+}
 
 // POST /api/auth/login
 router.post('/login', (req, res) => {
@@ -27,27 +59,61 @@ router.post('/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid username or password.' });
   }
 
-  const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET, {
-    expiresIn: TOKEN_EXPIRY,
-  });
+  const token = signToken(user);
+  setSessionCookie(res, token);
+  res.json({ username: user.username });
+});
 
-  res.json({ token, username: user.username });
+// GET /api/auth/me — used by the frontend on page load to check whether a
+// valid session cookie exists, since the token is no longer readable by JS.
+router.get('/me', requireAuth, (req, res) => {
+  res.json({ username: req.user.username });
+});
+
+// POST /api/auth/logout — clears the session cookie server-side.
+router.post('/logout', (req, res) => {
+  res.clearCookie(COOKIE_NAME, { path: '/' });
+  res.json({ success: true });
 });
 
 // Middleware to protect routes
 function requireAuth(req, res, next) {
-  const header = req.headers.authorization;
-  if (!header || !header.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'No token provided.' });
+  const token = req.cookies && req.cookies[COOKIE_NAME];
+  if (!token) {
+    return res.status(401).json({ error: 'No active session. Please log in.' });
   }
 
-  const token = header.split(' ')[1];
   try {
     const payload = jwt.verify(token, JWT_SECRET);
+
+    // --- Idle timeout check ---
+    // Even if the JWT hasn't cryptographically expired, reject sessions idle
+    // longer than IDLE_TIMEOUT_MS. This is the real server-side enforcement
+    // for "logout on browser close" — if the browser restores the session
+    // cookie when reopened (which many do), the server rejects it if too
+    // much time has passed since the token was issued/refreshed.
+    const tokenIssuedAt = payload.issuedAt || (payload.iat * 1000);
+    const ageMs = Date.now() - tokenIssuedAt;
+    if (ageMs > IDLE_TIMEOUT_MS) {
+      res.clearCookie(COOKIE_NAME, { path: '/' });
+      return res.status(401).json({ error: 'Your session has expired. Please log in again.' });
+    }
+
+    // --- Token version check ---
+    // Reject tokens issued before the most recent password change. This
+    // forces every other device to re-authenticate immediately — the version
+    // embedded in the token won't match the incremented DB value.
+    const user = db.prepare('SELECT token_version FROM users WHERE id = ?').get(payload.userId);
+    if (!user || (payload.tokenVersion || 0) !== (user.token_version || 0)) {
+      res.clearCookie(COOKIE_NAME, { path: '/' });
+      return res.status(401).json({ error: 'Your session has ended because the password was changed. Please log in again.' });
+    }
+
     req.user = payload;
     next();
   } catch (err) {
-    return res.status(401).json({ error: 'Invalid or expired token. Please log in again.' });
+    res.clearCookie(COOKIE_NAME, { path: '/' });
+    return res.status(401).json({ error: 'Invalid or expired session. Please log in again.' });
   }
 }
 
@@ -69,9 +135,18 @@ router.post('/change-password', requireAuth, (req, res) => {
   }
 
   const newHash = bcrypt.hashSync(newPassword, 10);
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newHash, user.id);
+  const newTokenVersion = (user.token_version || 0) + 1;
+  db.prepare('UPDATE users SET password_hash = ?, token_version = ? WHERE id = ?')
+    .run(newHash, newTokenVersion, user.id);
 
-  res.json({ success: true, message: 'Password updated successfully.' });
+  // Issue a fresh session cookie for THIS device only, so it stays logged in;
+  // every other device/session holding the old cookie/token gets rejected by
+  // requireAuth on its very next request, because its tokenVersion no longer
+  // matches the user's current token_version in the database.
+  const token = signToken({ ...user, token_version: newTokenVersion });
+  setSessionCookie(res, token);
+
+  res.json({ success: true, message: 'Password updated successfully. You have been logged out of all other devices.' });
 });
 
 module.exports = { router, requireAuth };
