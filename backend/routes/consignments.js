@@ -23,7 +23,7 @@ function dbErrorDetail(err) {
 }
 
 const FIELDS = [
-  'lr_no', 'lr_date', 'edd', 'booking_mode',
+  'lr_no', 'lr_date', 'edd', 'booking_mode', 'amount',
   'origin', 'destination',
   'consignor_name_address', 'consignor_gstin', 'consignor_mobile', 'consignor_email',
   'consignee_name_address', 'consignee_gstin',
