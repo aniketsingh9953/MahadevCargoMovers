@@ -35,6 +35,7 @@ async function main() {
       lr_date TEXT NOT NULL,
       edd TEXT,
       booking_mode TEXT,
+      amount TEXT,
       origin TEXT,
       destination TEXT,
       consignor_name_address TEXT,
@@ -70,7 +71,7 @@ async function main() {
   `);
 
   // Migrations for consignment_notes columns added after initial release.
-  for (const col of ['consignor_mobile', 'consignor_email']) {
+  for (const col of ['consignor_mobile', 'consignor_email', 'amount']) {
     try {
       await db.exec(`ALTER TABLE consignment_notes ADD COLUMN ${col} TEXT;`);
       console.log(`Migrated: added ${col} column to consignment_notes.`);
