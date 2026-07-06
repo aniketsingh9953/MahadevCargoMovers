@@ -630,6 +630,7 @@ async function renderFormView(main) {
       lr_date: today,
       edd: '',
       booking_mode: 'To Pay',
+      amount: '',
       origin: 'Udaipur, Rajasthan',
       destination: '',
       consignor_name_address: '',
@@ -695,7 +696,7 @@ async function renderFormView(main) {
           <input type="date" name="lr_date" value="${escapeHtml(formData.lr_date)}" required />
         </div>
       </div>
-      <div class="form-section-body cols-2" style="padding-top:0;">
+      <div class="form-section-body cols-3" style="padding-top:0;">
         <div class="field-group">
           <label>EDD (Delivery Date)</label>
           <input type="date" name="edd" value="${escapeHtml(formData.edd)}" />
@@ -710,6 +711,10 @@ async function renderFormView(main) {
               </label>
             `).join('')}
           </div>
+        </div>
+        <div class="field-group">
+          <label>Amount (Rs.)</label>
+          <input type="text" name="amount" value="${escapeHtml(formData.amount)}" />
         </div>
       </div>
 
