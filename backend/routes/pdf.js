@@ -125,14 +125,15 @@ router.get('/:id', asyncHandler(async (req, res) => {
     [halfWidth, halfWidth]
   );
 
-  // ----- LR No / Date / EDD / Mode -----
-  const colW = CONTENT_WIDTH / 4;
+  // ----- LR No / Date / EDD / Mode / Amount -----
+  const colW = CONTENT_WIDTH / 5;
   y = drawGridRow(doc, y, [
     { label: 'LR No.', value: c.lr_no },
     { label: 'LR Date', value: fmtDate(c.lr_date) },
     { label: 'EDD', value: fmtDate(c.edd) },
     { label: 'Booking Mode', value: c.booking_mode },
-  ], [colW, colW, colW, colW]);
+    { label: 'Amount (Rs.)', value: c.amount },
+  ], [colW, colW, colW, colW, colW]);
   y += 4;
 
   // ----- Consignor / Consignee -----
