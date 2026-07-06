@@ -466,6 +466,7 @@ table.lr-table input[type="checkbox"] { width: 15px; height: 15px; cursor: point
 }
 
 .form-section-body.cols-2 { grid-template-columns: 1fr 1fr; }
+.form-section-body.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
 .form-section-body.cols-1 { grid-template-columns: 1fr; }
 
 .field-group.span-full { grid-column: 1 / -1; }
@@ -618,6 +619,7 @@ table.lr-table input[type="checkbox"] { width: 15px; height: 15px; cursor: point
   .nav-item { white-space: nowrap; }
   .main-content { padding: 20px; }
   .form-section-body.cols-2 { grid-template-columns: 1fr; }
+  .form-section-body.cols-3 { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {
