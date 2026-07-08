@@ -1,4 +1,4 @@
-// app.js 
+// app.js
 // A small hand-rolled SPA — no framework, no build step.
 // State lives in `State`, screens are rendered into #app by render functions.
 
