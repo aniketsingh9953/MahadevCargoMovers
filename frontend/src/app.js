@@ -639,6 +639,8 @@ async function renderFormView(main) {
       consignor_email: '',
       consignee_name_address: '',
       consignee_gstin: '',
+      consignee_mobile: '',
+      consignee_email: '',
       vehicle_no: '',
       driver_name: '',
       driver_mobile: '',
@@ -741,8 +743,16 @@ async function renderFormView(main) {
           <input type="tel" name="consignor_mobile" value="${escapeHtml(formData.consignor_mobile)}" placeholder="9876543210" />
         </div>
         <div class="field-group">
+          <label>Consignee Mobile</label>
+          <input type="tel" name="consignee_mobile" value="${escapeHtml(formData.consignee_mobile)}" placeholder="9876543210" />
+        </div>
+        <div class="field-group">
           <label>Consignor Email</label>
           <input type="email" name="consignor_email" value="${escapeHtml(formData.consignor_email)}" placeholder="consignor@example.com" />
+        </div>
+        <div class="field-group">
+          <label>Consignee Email</label>
+          <input type="email" name="consignee_email" value="${escapeHtml(formData.consignee_email)}" placeholder="consignee@example.com" />
         </div>
       </div>
 
