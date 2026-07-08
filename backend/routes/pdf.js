@@ -139,7 +139,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
   // ----- Consignor / Consignee -----
   y = drawSectionHeader(doc, y, 'CONSIGNOR & CONSIGNEE');
   const consignorValue = `${c.consignor_name_address || '-'}\nGSTIN: ${c.consignor_gstin || '-'}\nMobile: ${c.consignor_mobile || '-'}   Email: ${c.consignor_email || '-'}`;
-  const consigneeValue = `${c.consignee_name_address || '-'}\nGSTIN: ${c.consignee_gstin || '-'}`;
+  const consigneeValue = `${c.consignee_name_address || '-'}\nGSTIN: ${c.consignee_gstin || '-'}\nMobile: ${c.consignee_mobile || '-'}   Email: ${c.consignee_email || '-'}`;
   y = drawGridRow(doc, y, [
     { label: 'Consignor Name & Address', value: consignorValue },
     { label: 'Consignee Name & Address', value: consigneeValue },
