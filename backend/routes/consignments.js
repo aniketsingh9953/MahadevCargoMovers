@@ -26,7 +26,7 @@ const FIELDS = [
   'lr_no', 'lr_date', 'edd', 'booking_mode', 'amount',
   'origin', 'destination',
   'consignor_name_address', 'consignor_gstin', 'consignor_mobile', 'consignor_email',
-  'consignee_name_address', 'consignee_gstin',
+  'consignee_name_address', 'consignee_gstin', 'consignee_mobile', 'consignee_email',
   'vehicle_no', 'driver_name', 'driver_mobile', 'vehicle_type',
   'eway_bill_no', 'eway_validity', 'invoice_no', 'invoice_date', 'invoice_value',
   'insurance_detail',
