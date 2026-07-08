@@ -44,6 +44,8 @@ async function main() {
       consignor_email TEXT,
       consignee_name_address TEXT,
       consignee_gstin TEXT,
+      consignee_mobile TEXT,
+      consignee_email TEXT,
       vehicle_no TEXT,
       driver_name TEXT,
       driver_mobile TEXT,
@@ -71,7 +73,7 @@ async function main() {
   `);
 
   // Migrations for consignment_notes columns added after initial release.
-  for (const col of ['consignor_mobile', 'consignor_email', 'amount']) {
+  for (const col of ['consignor_mobile', 'consignor_email', 'amount', 'consignee_mobile', 'consignee_email']) {
     try {
       await db.exec(`ALTER TABLE consignment_notes ADD COLUMN ${col} TEXT;`);
       console.log(`Migrated: added ${col} column to consignment_notes.`);
